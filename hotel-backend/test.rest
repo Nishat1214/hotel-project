@@ -1,0 +1,94 @@
+### Register a new user
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "test",
+  "email": "test@gmail.com",
+  "phone": "01700000000",
+  "password": "123456"
+}
+
+### Login as customer
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@gmail.com",
+  "password": "123456"
+}
+
+### Login with the same user
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "nsj20018@gmail.com",
+  "password": "123456"
+}
+
+### Add a new room (Admin only)
+POST http://localhost:5000/api/rooms
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzQ5NThkMTMyZGU5MTcyMGQ3YTFjMyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4NjEwMjE0MywiZXhwIjoxNzg2NzA2OTQzfQ.KAEqbkSzTd_rf4RGGF4poCjFaomsu8-jtxfDQP8nJPY
+
+{
+  "roomNumber": "101",
+  "type": "deluxe",
+  "capacity": 2,
+  "price": 120,
+  "facilities": ["WiFi", "AC", "TV"]
+}
+
+### Get all rooms (public)
+GET http://localhost:5000/api/rooms
+
+### Search + filter rooms
+GET http://localhost:5000/api/rooms?type=deluxe&status=Available
+
+### Try adding a room with price 0 (should fail)
+POST http://localhost:5000/api/rooms
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzQ5NThkMTMyZGU5MTcyMGQ3YTFjMyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4NjEwMjE0MywiZXhwIjoxNzg2NzA2OTQzfQ.KAEqbkSzTd_rf4RGGF4poCjFaomsu8-jtxfDQP8nJPY
+
+{
+  "roomNumber": "102",
+  "type": "standard",
+  "capacity": 2,
+  "price": 0
+}
+
+### Try adding a family room with capacity 6 (should fail, max is 4)
+POST http://localhost:5000/api/rooms
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzQ5NThkMTMyZGU5MTcyMGQ3YTFjMyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4NjEwNTU2MSwiZXhwIjoxNzg2NzEwMzYxfQ.eBJIHtqiT1ZDgXkrtV3o5-prf64fAd6m8e3Hnr1SF58
+
+{
+  "roomNumber": "201",
+  "type": "family",
+  "capacity": 6,
+  "price": 200
+}
+### Forgot password - sends real email
+POST http://localhost:5000/api/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "nsj20018@gmail.com"
+}
+
+### Book a room (online payment - auto confirms)
+POST http://localhost:5000/api/reservations
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzg2NWNlN2EwM2E2M2Y3YjUyNzU2NSIsInJvbGUiOiJjdXN0b21lciIsImlhdCI6MTc4NjI3NTI4MiwiZXhwIjoxNzg2ODgwMDgyfQ.1Zo7xv--kAiaSR3RdMdlqiFkLhfYMk683hBECS69L0k
+
+{
+  "roomId": "PASTE_A_REAL_ROOM_ID",
+  "checkIn": "2026-08-15",
+  "checkOut": "2026-08-15",
+  "guests": 2,
+  "paymentMethod": "online"
+}
+
+### Get room categories
+GET http://localhost:5000/api/rooms/categories
