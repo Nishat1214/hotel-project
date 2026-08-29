@@ -4,7 +4,6 @@ import api from "../services/api";
 
 const statusColors = {
   Confirmed: "bg-green-100 text-green-700",
-  Pending: "bg-yellow-100 text-yellow-700",
   Cancelled: "bg-red-100 text-red-700",
   Completed: "bg-gray-100 text-gray-700",
 };
@@ -29,13 +28,14 @@ const ReceptionReservations = () => {
     fetchReservations();
   }, []);
 
-  const handleConfirmPayment = async (id) => {
-    if (!confirm("Confirm that offline payment has been received?")) return;
+  const handleCancel = async (id) => {
+    if (!confirm("Cancel this reservation? The advance payment is non-refundable.")) return;
     try {
-      await api.put(`/reservations/${id}/confirm-payment`);
+      const { data } = await api.put(`/reservations/${id}/cancel`);
+      alert(data.message);
       fetchReservations();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to confirm payment");
+      alert(err.response?.data?.message || "Failed to cancel reservation");
     }
   };
 
@@ -43,21 +43,18 @@ const ReceptionReservations = () => {
     "Booking ID": r._id.slice(-6).toUpperCase(),
     Customer: r.customer?.name || "N/A",
     Room: r.room ? `${r.room.type} Room ${r.room.roomNumber}` : "N/A",
+    Source: r.bookingSource === "receptionist" ? "Walk-in" : "Online",
     "Check-in": new Date(r.checkIn).toLocaleDateString(),
-    "Check-out": new Date(r.checkOut).toLocaleDateString(),
-    Payment: `${r.paymentMethod} (${r.paymentStatus})`,
+    "Advance / Balance": `Tk ${r.advanceAmount} / Tk ${r.paymentStatus === "Fully Paid" || r.paymentStatus === "Paid" ? 0 : r.balanceAmount}`,
     Status: (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[r.status]}`}>
         {r.status}
       </span>
     ),
     Action:
-      r.paymentMethod === "offline" && r.paymentStatus === "Pending" && r.status !== "Cancelled" ? (
-        <button
-          onClick={() => handleConfirmPayment(r._id)}
-          className="text-green-600 hover:underline text-sm"
-        >
-          Confirm 
+      r.status !== "Cancelled" && r.status !== "Completed" && !r.checkedIn ? (
+        <button onClick={() => handleCancel(r._id)} className="text-red-600 hover:underline text-sm">
+          Cancel
         </button>
       ) : null,
   }));
@@ -67,11 +64,13 @@ const ReceptionReservations = () => {
       <h1 className="text-2xl font-bold text-[#1E3A8A] mb-6">Reservations</h1>
       {loading ? (
         <p className="text-gray-400 text-center py-10">Loading...</p>
-      ) : (
+      ) : reservations.length > 0 ? (
         <Table
-          columns={["Booking ID", "Customer", "Room", "Check-in", "Check-out", "Payment", "Status", "Action"]}
+          columns={["Booking ID", "Customer", "Room", "Source", "Check-in", "Advance / Balance", "Status", "Action"]}
           data={tableData}
         />
+      ) : (
+        <p className="text-gray-400 text-center py-10">No reservations yet.</p>
       )}
     </div>
   );

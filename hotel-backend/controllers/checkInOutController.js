@@ -12,7 +12,6 @@ export const checkInGuest = async (req, res) => {
       return res.status(404).json({ message: "Reservation not found" });
     }
 
-    // Rule: reservation must be Confirmed (which it always is once advance is paid)
     if (reservation.status !== "Confirmed") {
       return res.status(400).json({
         message: `Check-in rejected: reservation status is "${reservation.status}", must be "Confirmed"`,
@@ -23,7 +22,6 @@ export const checkInGuest = async (req, res) => {
       return res.status(400).json({ message: "Guest is already checked in" });
     }
 
-    // Rule: current date must be valid for check-in
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const plannedCheckIn = new Date(reservation.checkIn);
@@ -42,12 +40,6 @@ export const checkInGuest = async (req, res) => {
 
     if (room.status === "Occupied") {
       return res.status(400).json({ message: "Check-in rejected: room is already occupied" });
-    }
-
-    // Rule: advance payment must be confirmed (it always is by the time reservation exists,
-    // but we double-check defensively)
-    if (reservation.paymentStatus !== "Advance Paid" && reservation.paymentStatus !== "Fully Paid") {
-      return res.status(400).json({ message: "Check-in rejected: advance payment not confirmed" });
     }
 
     reservation.checkedIn = true;
@@ -78,8 +70,22 @@ export const getCheckoutPreview = async (req, res) => {
       return res.status(404).json({ message: "Payment record not found" });
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const plannedCheckOut = new Date(reservation.checkOut);
+    plannedCheckOut.setHours(0, 0, 0, 0);
+
+    const daysLate = Math.max(0, Math.ceil((today - plannedCheckOut) / (1000 * 60 * 60 * 24)));
+
+    const nights = Math.ceil(
+      (new Date(reservation.checkOut) - new Date(reservation.checkIn)) / (1000 * 60 * 60 * 24)
+    );
+    const perNightRate = Math.round(payment.roomCharge / nights);
+    const lateFee = daysLate * perNightRate;
+
     res.status(200).json({
       reservationId: reservation._id,
+      paymentId: payment._id,
       room: reservation.room,
       roomCharge: payment.roomCharge,
       additionalCharges: payment.additionalCharges,
@@ -89,6 +95,8 @@ export const getCheckoutPreview = async (req, res) => {
       balanceAmount: payment.balanceAmount,
       balancePaid: payment.balancePaid,
       status: payment.status,
+      daysLate,
+      lateFee,
     });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -120,19 +128,40 @@ export const checkOutGuest = async (req, res) => {
       return res.status(404).json({ message: "Payment record not found for this reservation" });
     }
 
-    // Apply any new additional charges (e.g. minibar, damage) discovered at checkout
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const plannedCheckOut = new Date(reservation.checkOut);
+    plannedCheckOut.setHours(0, 0, 0, 0);
+    const daysLate = Math.max(0, Math.ceil((today - plannedCheckOut) / (1000 * 60 * 60 * 24)));
+
+    if (daysLate > 0) {
+      const nights = Math.ceil(
+        (new Date(reservation.checkOut) - new Date(reservation.checkIn)) / (1000 * 60 * 60 * 24)
+      );
+      const perNightRate = Math.round(payment.roomCharge / nights);
+      const lateFee = daysLate * perNightRate;
+
+      payment.additionalCharges += lateFee;
+      payment.additionalChargeNotes = payment.additionalChargeNotes
+        ? `${payment.additionalChargeNotes}; Late checkout fee (${daysLate} extra night${daysLate > 1 ? "s" : ""}): Tk ${lateFee}`
+        : `Late checkout fee (${daysLate} extra night${daysLate > 1 ? "s" : ""}): Tk ${lateFee}`;
+      payment.totalAmount = payment.roomCharge + payment.additionalCharges;
+      payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+      payment.balancePaid = false;
+      await payment.save();
+    }
+
     if (additionalCharge && Number(additionalCharge) > 0) {
       payment.additionalCharges += Number(additionalCharge);
       payment.additionalChargeNotes = payment.additionalChargeNotes
         ? `${payment.additionalChargeNotes}; ${note || "Checkout charge"}: ${additionalCharge}`
         : `${note || "Checkout charge"}: ${additionalCharge}`;
       payment.totalAmount = payment.roomCharge + payment.additionalCharges;
-      payment.balanceAmount = payment.totalAmount - payment.advanceAmount;
-      payment.balancePaid = false; // new charge means balance needs settling again
+      payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+      payment.balancePaid = false;
       await payment.save();
     }
 
-    // Rule: outstanding balance must be settled (with a chosen payment method) before checkout completes
     if (payment.balanceAmount > 0 && !payment.balancePaid) {
       if (!balanceMethod) {
         return res.status(400).json({
@@ -148,10 +177,10 @@ export const checkOutGuest = async (req, res) => {
       payment.balancePaid = true;
       payment.balanceMethod = balanceMethod;
       payment.balancePaidAt = new Date();
-      payment.status = "Fully Paid";
+      payment.status = "Paid";
       await payment.save();
 
-      reservation.paymentStatus = "Fully Paid";
+      reservation.paymentStatus = "Paid";
     }
 
     reservation.status = "Completed";

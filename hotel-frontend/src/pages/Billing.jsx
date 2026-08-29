@@ -3,6 +3,12 @@ import Table from "../components/Table";
 import Modal from "../components/Modal";
 import api from "../services/api";
 
+const statusColors = {
+  Pending: "bg-red-100 text-red-700",
+  "Advance Paid": "bg-yellow-100 text-yellow-700",
+  Paid: "bg-green-100 text-green-700",
+};
+
 const Billing = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -11,6 +17,7 @@ const Billing = () => {
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeNote, setChargeNote] = useState("");
   const [chargeError, setChargeError] = useState("");
+  const [balanceMethod, setBalanceMethod] = useState("cash");
 
   const fetchPayments = async () => {
     setLoading(true);
@@ -33,6 +40,7 @@ const Billing = () => {
     setChargeAmount("");
     setChargeNote("");
     setChargeError("");
+    setBalanceMethod("cash");
     setIsModalOpen(true);
   };
 
@@ -50,7 +58,7 @@ const Billing = () => {
         amount: Number(chargeAmount),
         note: chargeNote,
       });
-      setSelectedPayment({ ...selectedPayment, ...data });
+      setSelectedPayment(data);
       setChargeAmount("");
       setChargeNote("");
       fetchPayments();
@@ -59,15 +67,15 @@ const Billing = () => {
     }
   };
 
-  const handleMarkPaid = async () => {
-    if (!confirm(`Confirm that Tk ${selectedPayment.totalAmount} has been received?`)) return;
+  const handleSettleBalance = async () => {
+    if (!confirm(`Confirm that Tk ${selectedPayment.balanceAmount} has been received via ${balanceMethod}?`)) return;
     try {
-      const { data } = await api.put(`/payments/${selectedPayment._id}/mark-paid`);
-      setSelectedPayment({ ...selectedPayment, status: "Paid" });
+      const { data } = await api.put(`/payments/${selectedPayment._id}/settle-balance`, { balanceMethod });
+      setSelectedPayment(data.payment);
       fetchPayments();
       alert(data.message);
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to mark as paid");
+      alert(err.response?.data?.message || "Failed to settle balance");
     }
   };
 
@@ -78,13 +86,10 @@ const Billing = () => {
       ? `${p.reservation.room.type} Room ${p.reservation.room.roomNumber}`
       : "N/A",
     Total: `Tk ${p.totalAmount}`,
-    Method: p.method.charAt(0).toUpperCase() + p.method.slice(1),
+    Advance: `Tk ${p.advanceAmount}`,
+    Balance: `Tk ${p.balanceAmount}`,
     Status: (
-      <span
-        className={`px-2 py-1 rounded-full text-xs font-medium ${
-          p.status === "Paid" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-        }`}
-      >
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[p.status]}`}>
         {p.status}
       </span>
     ),
@@ -103,7 +108,7 @@ const Billing = () => {
         <p className="text-gray-400 text-center py-10">Loading invoices...</p>
       ) : payments.length > 0 ? (
         <Table
-          columns={["Invoice", "Customer", "Room", "Total", "Method", "Status", "Action"]}
+          columns={["Invoice", "Customer", "Room", "Total", "Advance", "Balance", "Status", "Action"]}
           data={tableData}
         />
       ) : (
@@ -129,16 +134,38 @@ const Billing = () => {
             <p className="text-lg font-bold text-[#1E3A8A] pt-2 border-t">
               Total: Tk {selectedPayment.totalAmount}
             </p>
-            <p><strong>Payment Method:</strong> {selectedPayment.method}</p>
+
+            <div className="bg-[#F8FAFC] rounded p-3 space-y-1">
+              <p>
+                <strong>Advance Paid:</strong> Tk {selectedPayment.advanceAmount}{" "}
+                {selectedPayment.advanceAmount > 0 && `(${selectedPayment.advanceMethod})`}
+              </p>
+              <p><strong>Balance:</strong> Tk {selectedPayment.balanceAmount}</p>
+              {selectedPayment.transactionId && (
+                <p className="text-xs text-gray-500">
+                  <strong>Transaction ID:</strong> {selectedPayment.transactionId}
+                </p>
+              )}
+            </div>
+
             <p><strong>Status:</strong> {selectedPayment.status}</p>
 
-            {selectedPayment.status === "Pending" && (
+            {!selectedPayment.balancePaid && selectedPayment.balanceAmount > 0 && (
               <>
-                <button
-                  onClick={handleMarkPaid}
-                  className="w-full bg-green-600 text-white py-2 rounded text-sm font-semibold hover:opacity-90 mt-3"
+                <label className="block text-sm font-medium mb-1 mt-3">Settle Balance Via</label>
+                <select
+                  value={balanceMethod}
+                  onChange={(e) => setBalanceMethod(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-sm mb-2"
                 >
-                  Mark as Paid
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                </select>
+                <button
+                  onClick={handleSettleBalance}
+                  className="w-full bg-green-600 text-white py-2 rounded text-sm font-semibold hover:opacity-90"
+                >
+                  Settle Balance (Tk {selectedPayment.balanceAmount})
                 </button>
 
                 <form onSubmit={handleAddCharge} className="bg-[#F8FAFC] rounded p-3 mt-3 space-y-2">

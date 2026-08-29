@@ -1,0 +1,23 @@
+import mongoose from "mongoose";
+
+const pendingBalancePaymentSchema = new mongoose.Schema(
+  {
+    tranId: { type: String, required: true, unique: true },
+    payment: { type: mongoose.Schema.Types.ObjectId, ref: "Payment", required: true },
+    reservation: { type: mongoose.Schema.Types.ObjectId, ref: "Reservation", required: true },
+    amount: { type: Number, required: true },
+    completeCheckout: { type: Boolean, default: false },
+    status: {
+      type: String,
+      enum: ["Initiated", "Completed", "Failed"],
+      default: "Initiated",
+    },
+  },
+  { timestamps: true }
+);
+
+pendingBalancePaymentSchema.index({ createdAt: 1 }, { expireAfterSeconds: 3600 });
+
+const PendingBalancePayment = mongoose.model("PendingBalancePayment", pendingBalancePaymentSchema);
+
+export default PendingBalancePayment;

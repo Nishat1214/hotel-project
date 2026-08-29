@@ -9,6 +9,12 @@ const pendingBookingSchema = new mongoose.Schema(
     checkOut: { type: Date, required: true },
     guests: { type: Number, required: true },
     advanceAmount: { type: Number, required: true },
+    bookingSource: {
+      type: String,
+      enum: ["customer", "receptionist"],
+      default: "customer",
+    },
+    isNewCustomer: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ["Initiated", "Completed", "Failed"],
@@ -18,7 +24,6 @@ const pendingBookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-delete stale pending bookings after 1 hour (in case customer abandons payment)
 pendingBookingSchema.index({ createdAt: 1 }, { expireAfterSeconds: 3600 });
 
 const PendingBooking = mongoose.model("PendingBooking", pendingBookingSchema);

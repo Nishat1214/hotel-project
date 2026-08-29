@@ -8,19 +8,17 @@ const CheckInOut = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("checkin");
 
-  // Check-in modal state
   const [checkinModal, setCheckinModal] = useState(null);
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [checkinError, setCheckinError] = useState("");
 
-  // Check-out modal state
   const [checkoutModal, setCheckoutModal] = useState(null);
   const [billPreview, setBillPreview] = useState(null);
   const [additionalCharge, setAdditionalCharge] = useState("");
   const [chargeNote, setChargeNote] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const [finalPaymentConfirmed, setFinalPaymentConfirmed] = useState(false);
-  const [step, setStep] = useState("charges"); // "charges" -> "confirm"
+  const [balanceMethod, setBalanceMethod] = useState("cash");
+  const [step, setStep] = useState("charges");
 
   const fetchReservations = async () => {
     setLoading(true);
@@ -38,22 +36,15 @@ const CheckInOut = () => {
     fetchReservations();
   }, []);
 
-  // ---------- CHECK-IN ----------
   const openCheckinModal = (reservation) => {
     setCheckinModal(reservation);
-    setPaymentConfirmed(false);
     setCheckinError("");
   };
-
-  const needsPaymentVerification =
-    checkinModal?.paymentMethod === "offline" && checkinModal?.paymentStatus !== "Paid";
 
   const handleCheckinSubmit = async () => {
     setCheckinError("");
     try {
-      const { data } = await api.put(`/reservations/${checkinModal._id}/checkin`, {
-        paymentReceived: needsPaymentVerification ? paymentConfirmed : undefined,
-      });
+      const { data } = await api.put(`/reservations/${checkinModal._id}/checkin`);
       alert(data.message);
       setCheckinModal(null);
       fetchReservations();
@@ -62,13 +53,13 @@ const CheckInOut = () => {
     }
   };
 
-  // ---------- CHECK-OUT ----------
   const openCheckoutModal = async (reservation) => {
     setCheckoutModal(reservation);
     setAdditionalCharge("");
     setChargeNote("");
     setCheckoutError("");
     setFinalPaymentConfirmed(false);
+    setBalanceMethod("cash");
     setStep("charges");
     setBillPreview(null);
 
@@ -81,23 +72,43 @@ const CheckInOut = () => {
   };
 
   const handleGenerateBill = () => {
-    // Move to confirmation step, recalculating totals locally for display
     const extra = Number(additionalCharge) || 0;
     setBillPreview((prev) => ({
       ...prev,
       additionalCharges: prev.additionalCharges + extra,
       totalAmount: prev.totalAmount + extra,
+      balanceAmount: prev.balanceAmount + extra,
     }));
     setStep("confirm");
   };
 
   const handleFinalizeCheckout = async () => {
     setCheckoutError("");
+
+    if (billPreview.balanceAmount > 0 && balanceMethod === "online") {
+      try {
+        if (additionalCharge && Number(additionalCharge) > 0) {
+          await api.put(`/payments/${billPreview.paymentId}/add-charge`, {
+            amount: Number(additionalCharge),
+            note: chargeNote,
+          });
+        }
+        const { data } = await api.post("/payments/sslcommerz/init-balance", {
+          paymentId: billPreview.paymentId,
+          completeCheckout: true,
+        });
+        window.location.href = data.gatewayUrl;
+      } catch (err) {
+        setCheckoutError(err.response?.data?.message || "Failed to start payment");
+      }
+      return;
+    }
+
     try {
       const { data } = await api.put(`/reservations/${checkoutModal._id}/checkout`, {
         additionalCharge: additionalCharge || 0,
         note: chargeNote,
-        paymentReceived: finalPaymentConfirmed,
+        balanceMethod: billPreview.balanceAmount > 0 ? balanceMethod : undefined,
       });
       alert(data.message);
       setCheckoutModal(null);
@@ -117,7 +128,7 @@ const CheckInOut = () => {
     Customer: r.customer?.name || "N/A",
     Room: r.room ? `${r.room.type} Room ${r.room.roomNumber}` : "N/A",
     "Check-in Date": new Date(r.checkIn).toLocaleDateString(),
-    Payment: `${r.paymentMethod} (${r.paymentStatus})`,
+    "Payment Status": r.paymentStatus,
     Action: (
       <button
         onClick={() => openCheckinModal(r)}
@@ -172,7 +183,7 @@ const CheckInOut = () => {
       ) : activeTab === "checkin" ? (
         checkInTableData.length > 0 ? (
           <Table
-            columns={["Booking ID", "Customer", "Room", "Check-in Date", "Payment", "Action"]}
+            columns={["Booking ID", "Customer", "Room", "Check-in Date", "Payment Status", "Action"]}
             data={checkInTableData}
           />
         ) : (
@@ -202,37 +213,21 @@ const CheckInOut = () => {
               <strong>Room:</strong> {checkinModal.room?.type} Room {checkinModal.room?.roomNumber}
             </p>
             <p className="text-sm mb-4">
-              <strong>Amount:</strong> Tk {checkinModal.totalPrice} ({checkinModal.paymentMethod})
+              <strong>Total Amount:</strong> Tk {checkinModal.totalPrice}
             </p>
 
-            {checkinModal.paymentMethod === "online" ? (
-              <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
-                ✅ Online payment already verified automatically.
-              </p>
-            ) : needsPaymentVerification ? (
-              <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={paymentConfirmed}
-                  onChange={(e) => setPaymentConfirmed(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>I confirm Tk {checkinModal.totalPrice} has been physically received from the guest.</span>
-              </label>
-            ) : (
-              <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
-                ✅ Payment already recorded as paid.
-              </p>
-            )}
+            <p className="bg-[#F8FAFC] text-gray-600 text-sm px-3 py-2 rounded mb-4">
+              Payment status: <strong>{checkinModal.paymentStatus}</strong>
+              {checkinModal.paymentStatus !== "Paid" && (
+                <> — remaining balance of Tk {checkinModal.balanceAmount} will be settled at checkout.</>
+              )}
+            </p>
 
             <button
               onClick={handleCheckinSubmit}
-              disabled={needsPaymentVerification && !paymentConfirmed}
-              className="w-full bg-[#1E3A8A] text-white py-2 rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full bg-[#1E3A8A] text-white py-2 rounded hover:opacity-90"
             >
-              {needsPaymentVerification && !paymentConfirmed
-                ? "Confirm payment to enable check-in"
-                : "Check In Guest"}
+              Check In Guest
             </button>
           </div>
         )}
@@ -259,14 +254,14 @@ const CheckInOut = () => {
               <>
                 <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
-                  <p>
-                    Base payment status:{" "}
-                    {billPreview.baseAmountPaid ? (
-                      <span className="text-green-600 font-medium">Paid ({billPreview.paymentMethod})</span>
-                    ) : (
-                      <span className="text-red-600 font-medium">Not yet paid</span>
-                    )}
-                  </p>
+                  <p>Advance paid: Tk {billPreview.advanceAmount} ({billPreview.advanceMethod})</p>
+                  <p>Balance so far: Tk {billPreview.balanceAmount}</p>
+                  {billPreview.daysLate > 0 && (
+                    <p className="text-red-600 font-medium pt-1 border-t mt-1">
+                      ⚠️ {billPreview.daysLate} day{billPreview.daysLate > 1 ? "s" : ""} late — Tk{" "}
+                      {billPreview.lateFee} late checkout fee will be added automatically
+                    </p>
+                  )}
                 </div>
 
                 <label className="block text-sm font-medium mb-1">
@@ -303,24 +298,46 @@ const CheckInOut = () => {
                   <p className="font-semibold text-[#1E3A8A] mb-2">📄 Final Invoice</p>
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
                   <p>Additional charges: Tk {billPreview.additionalCharges}</p>
+                  {billPreview.daysLate > 0 && (
+                    <p className="text-red-600 text-xs">
+                      (includes Tk {billPreview.lateFee} late checkout fee for {billPreview.daysLate} extra day
+                      {billPreview.daysLate > 1 ? "s" : ""})
+                    </p>
+                  )}
+                  <p>Advance already paid: Tk {billPreview.advanceAmount}</p>
                   <p className="font-bold text-lg pt-2 border-t mt-2">
-                    Total: Tk {billPreview.totalAmount}
+                    Balance Due Now: Tk {billPreview.balanceAmount}
                   </p>
                 </div>
 
-                {billPreview.additionalCharges > 0 ? (
-                  <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={finalPaymentConfirmed}
-                      onChange={(e) => setFinalPaymentConfirmed(e.target.checked)}
-                      className="mt-0.5"
-                    />
-                    <span>
-                      I confirm the additional charges of Tk {billPreview.additionalCharges} have
-                      been received.
-                    </span>
-                  </label>
+                {billPreview.balanceAmount > 0 ? (
+                  <>
+                    <label className="block text-sm font-medium mb-1">Balance Payment Method</label>
+                    <select
+                      value={balanceMethod}
+                      onChange={(e) => setBalanceMethod(e.target.value)}
+                      className="w-full border rounded px-3 py-2 mb-3"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                      <option value="online">Online (SSLCommerz)</option>
+                    </select>
+
+                    {balanceMethod !== "online" && (
+                      <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={finalPaymentConfirmed}
+                          onChange={(e) => setFinalPaymentConfirmed(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          I confirm the balance of Tk {billPreview.balanceAmount} has been received via{" "}
+                          {balanceMethod}.
+                        </span>
+                      </label>
+                    )}
+                  </>
                 ) : (
                   <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
                     ✅ No outstanding balance — ready to complete check-out.
@@ -336,10 +353,12 @@ const CheckInOut = () => {
                   </button>
                   <button
                     onClick={handleFinalizeCheckout}
-                    disabled={billPreview.additionalCharges > 0 && !finalPaymentConfirmed}
+                    disabled={billPreview.balanceAmount > 0 && balanceMethod !== "online" && !finalPaymentConfirmed}
                     className="flex-1 bg-green-600 text-white py-2 rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    Complete Check-out
+                    {balanceMethod === "online" && billPreview.balanceAmount > 0
+                      ? "Pay via SSLCommerz"
+                      : "Complete Check-out"}
                   </button>
                 </div>
               </>

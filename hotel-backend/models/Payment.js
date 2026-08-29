@@ -10,19 +10,19 @@ const paymentSchema = new mongoose.Schema(
     additionalCharges: { type: Number, default: 0 },
     additionalChargeNotes: { type: String, default: "" },
     totalAmount: { type: Number, required: true }, // roomCharge + additionalCharges
+      advanceAmount: { type: Number, required: true },
+    advanceMethod: { type: String, enum: ["online", "cash", "card", "pay_at_hotel"], required: true },
+    advancePaidAt: { type: Date },
+    transactionId: { type: String },
 
-    advanceAmount: { type: Number, required: true },
-    advanceMethod: { type: String, enum: ["online", "cash", "card"], required: true },
-    advancePaidAt: { type: Date, default: Date.now },
-
-    balanceAmount: { type: Number, required: true }, // totalAmount - advanceAmount
+    balanceAmount: { type: Number, required: true },
     balancePaid: { type: Boolean, default: false },
     balanceMethod: { type: String, enum: ["online", "cash", "card"] },
     balancePaidAt: { type: Date },
-
+      balanceTransactionId: { type: String },
     status: {
       type: String,
-      enum: ["Advance Paid", "Fully Paid"],
+      enum: ["Pending", "Advance Paid", "Paid"],
       default: "Advance Paid",
     },
   },

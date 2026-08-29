@@ -70,6 +70,8 @@ export const addAdditionalCharge = async (req, res) => {
       ? `${payment.additionalChargeNotes}; ${note || "Additional charge"}: ${amount}`
       : `${note || "Additional charge"}: ${amount}`;
     payment.totalAmount = payment.roomCharge + payment.additionalCharges;
+    payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+    payment.balancePaid = false;
 
     await payment.save();
 
@@ -79,32 +81,39 @@ export const addAdditionalCharge = async (req, res) => {
   }
 };
 
-// @desc   Mark a payment as Paid (used when billing is settled at the front desk)
-// @route  PUT /api/payments/:id/mark-paid
+// @desc   Settle the outstanding balance for a payment (e.g. from Billing page directly)
+// @route  PUT /api/payments/:id/settle-balance
 // @access Private (Admin, Receptionist)
-export const markPaymentPaid = async (req, res) => {
+export const settleBalance = async (req, res) => {
   try {
+    const { balanceMethod } = req.body;
+
+    if (!["cash", "card", "online"].includes(balanceMethod)) {
+      return res.status(400).json({ message: "Invalid balance payment method" });
+    }
+
     const payment = await Payment.findById(req.params.id);
     if (!payment) {
       return res.status(404).json({ message: "Payment not found" });
     }
 
-    if (payment.status === "Paid") {
-      return res.status(400).json({ message: "Payment is already marked as paid" });
+    if (payment.balancePaid || payment.balanceAmount <= 0) {
+      return res.status(400).json({ message: "Balance is already settled" });
     }
 
+    payment.balancePaid = true;
+    payment.balanceMethod = balanceMethod;
+    payment.balancePaidAt = new Date();
     payment.status = "Paid";
-    payment.paidAt = new Date();
     await payment.save();
 
-    // Keep the reservation's paymentStatus in sync
     const reservation = await Reservation.findById(payment.reservation);
     if (reservation) {
       reservation.paymentStatus = "Paid";
       await reservation.save();
     }
 
-    res.status(200).json({ message: "Payment marked as paid successfully", payment });
+    res.status(200).json({ message: "Balance settled successfully", payment });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }

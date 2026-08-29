@@ -24,20 +24,20 @@ const reservationSchema = new mongoose.Schema(
       default: "customer",
     },
 
-    // Advance payment (confirms the booking)
-    advanceAmount: { type: Number, required: true },
+      advanceAmount: { type: Number, required: true },
     advancePaymentMethod: {
       type: String,
-      enum: ["online", "cash", "card"],
+      enum: ["online", "cash", "card", "pay_at_hotel"],
       required: true,
     },
+    transactionId: { type: String },
 
     // Remaining balance (settled at checkout)
     balanceAmount: { type: Number, required: true },
 
     paymentStatus: {
       type: String,
-      enum: ["Advance Paid", "Fully Paid"],
+      enum: ["Pending", "Advance Paid", "Paid"],
       default: "Advance Paid",
     },
 

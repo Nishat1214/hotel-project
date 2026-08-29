@@ -31,7 +31,6 @@ export const getReservationReport = async (req, res) => {
     const report = {
       totalReservations: reservations.length,
       confirmed: reservations.filter((r) => r.status === "Confirmed").length,
-      pending: reservations.filter((r) => r.status === "Pending").length,
       cancelled: reservations.filter((r) => r.status === "Cancelled").length,
       completed: reservations.filter((r) => r.status === "Completed").length,
     };
@@ -48,21 +47,42 @@ export const getReservationReport = async (req, res) => {
 export const getRevenueReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const dateFilter = buildDateFilter(startDate, endDate, "paidAt");
 
-    const paidPayments = await Payment.find({ ...dateFilter, status: "Paid" });
+    const start = startDate ? new Date(startDate) : null;
+    let end = endDate ? new Date(endDate) : null;
+    if (end) end.setHours(23, 59, 59, 999);
 
-    const totalRevenue = paidPayments.reduce((sum, p) => sum + p.totalAmount, 0);
-    const averageBookingValue = paidPayments.length
-      ? Math.round(totalRevenue / paidPayments.length)
+    const inRange = (date) => {
+      if (!date) return false;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      return true;
+    };
+
+    const allPayments = await Payment.find();
+
+    // Collect every actual money-received event: advance payments and balance settlements
+    const revenueEvents = [];
+    allPayments.forEach((p) => {
+      if (p.advanceAmount > 0 && p.advancePaidAt && inRange(p.advancePaidAt)) {
+        revenueEvents.push({ date: p.advancePaidAt, amount: p.advanceAmount });
+      }
+      if (p.balancePaid && p.balancePaidAt && inRange(p.balancePaidAt)) {
+        const balanceCollected = p.totalAmount - p.advanceAmount;
+        revenueEvents.push({ date: p.balancePaidAt, amount: balanceCollected });
+      }
+    });
+
+    const totalRevenue = revenueEvents.reduce((sum, e) => sum + e.amount, 0);
+    const averageBookingValue = revenueEvents.length
+      ? Math.round(totalRevenue / revenueEvents.length)
       : 0;
 
     // Daily breakdown
     const dailyMap = {};
-    paidPayments.forEach((p) => {
-      if (!p.paidAt) return;
-      const day = p.paidAt.toISOString().split("T")[0];
-      dailyMap[day] = (dailyMap[day] || 0) + p.totalAmount;
+    revenueEvents.forEach((e) => {
+      const day = e.date.toISOString().split("T")[0];
+      dailyMap[day] = (dailyMap[day] || 0) + e.amount;
     });
     const dailyRevenue = Object.entries(dailyMap)
       .map(([date, amount]) => ({ date, amount }))
@@ -70,10 +90,9 @@ export const getRevenueReport = async (req, res) => {
 
     // Monthly breakdown
     const monthlyMap = {};
-    paidPayments.forEach((p) => {
-      if (!p.paidAt) return;
-      const month = p.paidAt.toISOString().slice(0, 7); // YYYY-MM
-      monthlyMap[month] = (monthlyMap[month] || 0) + p.totalAmount;
+    revenueEvents.forEach((e) => {
+      const month = e.date.toISOString().slice(0, 7);
+      monthlyMap[month] = (monthlyMap[month] || 0) + e.amount;
     });
     const monthlyRevenue = Object.entries(monthlyMap)
       .map(([month, amount]) => ({ month, amount }))
@@ -82,7 +101,7 @@ export const getRevenueReport = async (req, res) => {
     res.status(200).json({
       totalRevenue,
       averageBookingValue,
-      totalPaidBookings: paidPayments.length,
+      totalPaidBookings: revenueEvents.length,
       dailyRevenue,
       monthlyRevenue,
     });

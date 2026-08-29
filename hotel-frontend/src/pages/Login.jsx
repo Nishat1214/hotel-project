@@ -1,16 +1,24 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 
 const Login = () => {
+  const { login, user: currentUser } = useAuth();
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
-   const [loginRole, setLoginRole] = useState(null);
+  const [loginRole, setLoginRole] = useState(null);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
+
+  // If already logged in, skip the login form entirely and go straight to the dashboard
+  if (currentUser) {
+    if (currentUser.role === "admin") return <Navigate to="/admin" replace />;
+    if (currentUser.role === "receptionist") return <Navigate to="/receptionist" replace />;
+    return <Navigate to="/customer" replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -71,7 +79,7 @@ const Login = () => {
             Forgot password?
           </Link>
         </p>
-        
+
         {loginRole && (
           <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4 text-center font-medium">
             ✅ Logged in as {loginRole.charAt(0).toUpperCase() + loginRole.slice(1)} — redirecting...

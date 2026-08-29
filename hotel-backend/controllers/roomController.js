@@ -1,4 +1,5 @@
 import Room from "../models/Room.js";
+import Reservation from "../models/Reservation.js";
 
 // Business rule: max capacity allowed per room type
 const CAPACITY_LIMITS = {
@@ -18,7 +19,6 @@ const isValidCapacity = (type, capacity) => {
 // @access Private (Admin only)
 export const addRoom = async (req, res) => {
   try {
-   
     const { roomNumber, type, capacity, price, facilities, images, status } = req.body;
 
     if (!roomNumber || !type || !capacity || price === undefined) {
@@ -56,25 +56,86 @@ export const addRoom = async (req, res) => {
   }
 };
 
-// @desc   Get all rooms — supports search + filter by type/status
-// @route  GET /api/rooms?type=deluxe&status=Available&search=101
+// @desc   Get all rooms — supports search + filter by type/status + date availability
+// @route  GET /api/rooms?type=deluxe&status=Available&search=101&checkIn=...&checkOut=...
 // @access Public
 export const getAllRooms = async (req, res) => {
   try {
-    const { type, status, search } = req.query;
+    const { type, status, search, checkIn, checkOut } = req.query;
 
     const filter = {};
-
     if (type) filter.type = type;
     if (status) filter.status = status;
+    if (search) filter.roomNumber = { $regex: search, $options: "i" };
 
-    if (search) {
-      filter.roomNumber = { $regex: search, $options: "i" };
+    let rooms = await Room.find(filter).sort({ roomNumber: 1 });
+
+    if (checkIn && checkOut) {
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+
+      const overlappingReservations = await Reservation.find({
+        status: { $ne: "Cancelled" },
+        checkIn: { $lt: checkOutDate },
+        checkOut: { $gt: checkInDate },
+      }).select("room");
+
+      const bookedRoomIds = new Set(overlappingReservations.map((r) => r.room.toString()));
+
+      rooms = rooms.filter((room) => !bookedRoomIds.has(room._id.toString()));
     }
 
-    const rooms = await Room.find(filter).sort({ roomNumber: 1 });
-
     res.status(200).json(rooms);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc   Get rooms grouped by category (type) with availability summary
+// @route  GET /api/rooms/categories
+// @access Public
+export const getRoomCategories = async (req, res) => {
+  try {
+    const types = ["standard", "deluxe", "suite", "family"];
+    const { checkIn, checkOut } = req.query;
+
+    let bookedRoomIds = new Set();
+    if (checkIn && checkOut) {
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+      const overlapping = await Reservation.find({
+        status: { $ne: "Cancelled" },
+        checkIn: { $lt: checkOutDate },
+        checkOut: { $gt: checkInDate },
+      }).select("room");
+      bookedRoomIds = new Set(overlapping.map((r) => r.room.toString()));
+    }
+
+    const categories = await Promise.all(
+      types.map(async (type) => {
+        const rooms = await Room.find({ type });
+
+        const availableRooms =
+          checkIn && checkOut
+            ? rooms.filter((r) => r.status !== "Maintenance" && !bookedRoomIds.has(r._id.toString()))
+            : rooms.filter((r) => r.status === "Available");
+
+        const prices = rooms.map((r) => r.price);
+        const facilitiesSet = new Set(rooms.flatMap((r) => r.facilities || []));
+
+        return {
+          type,
+          totalRooms: rooms.length,
+          availableCount: availableRooms.length,
+          minPrice: prices.length ? Math.min(...prices) : null,
+          capacity: CAPACITY_LIMITS[type],
+          image: rooms.find((r) => r.images?.length)?.images[0] || null,
+          facilities: Array.from(facilitiesSet),
+        };
+      })
+    );
+
+    res.status(200).json(categories.filter((c) => c.totalRooms > 0));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -158,42 +219,16 @@ export const deleteRoom = async (req, res) => {
       });
     }
 
+    const hasHistory = await Reservation.findOne({ room: room._id });
+    if (hasHistory) {
+      return res.status(400).json({
+        message: "This room has reservation history and cannot be deleted. Mark it as 'Maintenance' instead if it's no longer in use.",
+      });
+    }
+
     await room.deleteOne();
 
     res.status(200).json({ message: "Room deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-// @desc   Get rooms grouped by category (type) with availability summary
-// @route  GET /api/rooms/categories
-// @access Public
-export const getRoomCategories = async (req, res) => {
-  try {
-    const types = ["standard", "deluxe", "suite", "family"];
-
-    const categories = await Promise.all(
-      types.map(async (type) => {
-        const rooms = await Room.find({ type });
-        const availableRooms = rooms.filter((r) => r.status === "Available");
-        const prices = rooms.map((r) => r.price);
-        const facilitiesSet = new Set(rooms.flatMap((r) => r.facilities || []));
-
-        return {
-          type,
-          totalRooms: rooms.length,
-          availableCount: availableRooms.length,
-          minPrice: prices.length ? Math.min(...prices) : null,
-          capacity: CAPACITY_LIMITS[type],
-          image: rooms.find((r) => r.images?.length)?.images[0] || null,
-          facilities: Array.from(facilitiesSet),
-        };
-      })
-    );
-
-    // Only show categories that actually have at least one room created
-    res.status(200).json(categories.filter((c) => c.totalRooms > 0));
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }

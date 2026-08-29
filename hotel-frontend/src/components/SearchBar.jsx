@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const SearchBar = () => {
+  const navigate = useNavigate();
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(1);
@@ -10,7 +12,12 @@ const SearchBar = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    console.log({ checkIn, checkOut, guests, roomType });
+    const params = new URLSearchParams();
+    if (checkIn) params.set("checkIn", checkIn);
+    if (checkOut) params.set("checkOut", checkOut);
+    if (guests) params.set("guests", guests);
+    if (roomType && roomType !== "any") params.set("type", roomType);
+    navigate(`/rooms?${params.toString()}`);
   };
 
   return (
@@ -59,6 +66,7 @@ const SearchBar = () => {
           className="w-full border rounded px-3 py-2"
         >
           <option value="any">Any</option>
+          <option value="standard">Standard</option>
           <option value="deluxe">Deluxe</option>
           <option value="suite">Suite</option>
           <option value="family">Family</option>

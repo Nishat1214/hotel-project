@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+
 import api from "../services/api";
 
 const ADVANCE_PERCENTAGE = 0.2;
@@ -14,29 +15,42 @@ const RoomCategoryDetails = () => {
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
+   const [searchParams] = useSearchParams();
+  const [checkIn, setCheckIn] = useState(searchParams.get("checkIn") || "");
+  const [checkOut, setCheckOut] = useState(searchParams.get("checkOut") || "");
   const [guests, setGuests] = useState(1);
   const [bookingError, setBookingError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
-  useEffect(() => {
-    const fetchRooms = async () => {
-      setLoading(true);
-      try {
-        const { data } = await api.get("/rooms", { params: { type, status: "Available" } });
-        setRooms(data);
-        if (data.length > 0) setSelectedRoomId(data[0]._id);
-      } catch (err) {
-        console.error("Failed to load rooms", err);
-      } finally {
-        setLoading(false);
+  const fetchRooms = async () => {
+    setLoading(true);
+    try {
+      const params = { type, status: "Available" };
+      if (checkIn && checkOut) {
+        params.checkIn = checkIn;
+        params.checkOut = checkOut;
       }
-    };
+      const { data } = await api.get("/rooms", { params });
+      setRooms(data);
+      setSelectedRoomId(data.length > 0 ? data[0]._id : null);
+    } catch (err) {
+      console.error("Failed to load rooms", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchRooms();
   }, [type]);
+
+  useEffect(() => {
+    if (checkIn && checkOut) {
+      fetchRooms();
+    }
+  }, [checkIn, checkOut]);
 
   const selectedRoom = rooms.find((r) => r._id === selectedRoomId);
 
@@ -66,7 +80,6 @@ const RoomCategoryDetails = () => {
         guests: Number(guests),
       });
 
-      // Redirect the whole browser to SSLCommerz's sandbox payment page
       window.location.href = data.gatewayUrl;
     } catch (err) {
       setBookingError(err.response?.data?.message || "Failed to start payment. Please try again.");
@@ -76,11 +89,11 @@ const RoomCategoryDetails = () => {
 
   const displayName = type.charAt(0).toUpperCase() + type.slice(1) + " Room";
 
-  if (loading) {
+  if (loading && rooms.length === 0) {
     return <div className="text-center py-16 text-gray-400">Loading...</div>;
   }
 
-  if (rooms.length === 0) {
+  if (!loading && rooms.length === 0 && !checkIn && !checkOut) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-16 text-center">
         <h1 className="text-2xl font-bold text-[#1E3A8A]">No {displayName}s available right now</h1>
@@ -111,7 +124,7 @@ const RoomCategoryDetails = () => {
           <div className="mt-6">
             <h1 className="text-3xl font-bold text-[#1E3A8A] mb-2">{displayName}</h1>
             <p className="text-2xl font-semibold text-[#D4AF37] mb-4">
-              Tk {selectedRoom?.price} / Night
+              Tk {selectedRoom?.price ?? "—"} / Night
             </p>
 
             <h3 className="font-semibold text-[#1E3A8A] mb-2">Facilities</h3>
@@ -127,9 +140,12 @@ const RoomCategoryDetails = () => {
               )}
             </ul>
 
-            <p className="text-sm text-gray-500">Capacity: up to {selectedRoom?.capacity} guests</p>
+            <p className="text-sm text-gray-500">
+              Capacity: up to {selectedRoom?.capacity ?? "—"} guests
+            </p>
             <p className="text-sm text-gray-400 mt-2">
-              {rooms.length} room{rooms.length > 1 ? "s" : ""} of this type currently available
+              {rooms.length} room{rooms.length !== 1 ? "s" : ""} of this type currently available
+              {checkIn && checkOut ? " for your selected dates" : ""}
             </p>
           </div>
         </div>
@@ -165,6 +181,12 @@ const RoomCategoryDetails = () => {
               className="w-full border rounded px-3 py-2 mb-4"
             />
 
+            {checkIn && checkOut && !loading && rooms.length === 0 && (
+              <p className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded mb-4">
+                No {type} rooms are available for these exact dates. Please try different dates.
+              </p>
+            )}
+
             <label className="block text-sm font-medium mb-1">Guests</label>
             <input
               type="number"
@@ -173,15 +195,16 @@ const RoomCategoryDetails = () => {
               value={guests}
               onChange={(e) => setGuests(e.target.value)}
               required
+              disabled={rooms.length === 0}
               className="w-full border rounded px-3 py-2 mb-4"
             />
             <p className="text-xs text-gray-400 -mt-3 mb-4">
-              Max {selectedRoom?.capacity} guests
+              Max {selectedRoom?.capacity ?? "—"} guests
             </p>
 
-            {nights > 0 && (
+            {nights > 0 && selectedRoom && (
               <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
-                <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom?.price}</p>
+                <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom.price}</p>
                 <p className="font-bold text-[#1E3A8A]">Total: Tk {totalPrice}</p>
                 <div className="pt-2 border-t mt-2">
                   <p className="text-[#D4AF37] font-semibold">
@@ -196,11 +219,13 @@ const RoomCategoryDetails = () => {
 
             <button
               type="submit"
-              disabled={submitting || nights === 0}
+              disabled={submitting || nights === 0 || rooms.length === 0}
               className="w-full bg-[#1E3A8A] text-white py-3 rounded font-semibold hover:opacity-90 disabled:opacity-50"
             >
               {submitting
                 ? "Redirecting to payment gateway..."
+                : rooms.length === 0
+                ? "No rooms available for these dates"
                 : nights > 0
                 ? `Pay Advance (Tk ${advanceAmount}) via SSLCommerz`
                 : "Select dates to continue"}

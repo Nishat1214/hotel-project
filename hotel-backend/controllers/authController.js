@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
-import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 
 // @desc   Register a new customer (public signup)
@@ -10,22 +10,18 @@ export const registerUser = async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
 
-    // Check required fields
     if (!name || !email || !phone || !password) {
       return res.status(400).json({ message: "Please fill all fields" });
     }
 
-    // Check if user already exists
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    // Hash the password before saving
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // IMPORTANT: public register always creates a "customer" — never admin/receptionist
     const user = await User.create({
       name,
       email,
@@ -56,13 +52,11 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Please provide email and password" });
     }
 
-    // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Compare entered password with hashed password in DB
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
@@ -91,7 +85,6 @@ export const createStaff = async (req, res) => {
       return res.status(400).json({ message: "Please fill all fields" });
     }
 
-    // Only allow creating receptionist or admin accounts through this route
     if (!["receptionist", "admin"].includes(role)) {
       return res.status(400).json({ message: "Invalid role for staff creation" });
     }
@@ -109,7 +102,7 @@ export const createStaff = async (req, res) => {
       email,
       phone,
       password: hashedPassword,
-      role, // trusted here because only Admin can reach this route
+      role,
     });
 
     res.status(201).json({
@@ -123,8 +116,6 @@ export const createStaff = async (req, res) => {
   }
 };
 
-// @desc   Request a password reset (generates a reset token)
-// @route  POST /api/auth/forgot-password
 // @desc   Request a password reset (generates a reset token and emails it)
 // @route  POST /api/auth/forgot-password
 export const forgotPassword = async (req, res) => {
@@ -145,7 +136,7 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
     await user.save();
 
-    const resetLink = `http://localhost:5173/reset-password/${rawToken}`;
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${rawToken}`;
 
     try {
       await sendEmail({
@@ -167,8 +158,6 @@ export const forgotPassword = async (req, res) => {
       console.log("✅ Reset email sent to:", user.email);
     } catch (emailError) {
       console.error("❌ Failed to send email:", emailError.message);
-      // Don't block the response — user can still be told to check email,
-      // but log this so we know if email sending is broken.
     }
 
     res.status(200).json({
@@ -178,6 +167,7 @@ export const forgotPassword = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 // @desc   Reset password using a valid token
 // @route  PUT /api/auth/reset-password/:token
 export const resetPassword = async (req, res) => {
@@ -227,6 +217,21 @@ export const getAllStaff = async (req, res) => {
   }
 };
 
+// @desc   Get all customer accounts (Admin only)
+// @route  GET /api/auth/customers
+// @access Private (Admin only)
+export const getAllCustomers = async (req, res) => {
+  try {
+    const customers = await User.find({ role: "customer" })
+      .select("-password")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(customers);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 // @desc   Admin deletes a staff account
 // @route  DELETE /api/auth/staff/:id
 // @access Private (Admin only)
@@ -242,9 +247,15 @@ export const deleteStaff = async (req, res) => {
       return res.status(400).json({ message: "This endpoint can only delete staff accounts" });
     }
 
-    // Business rule: prevent an admin from deleting their own account
     if (user._id.toString() === req.user._id.toString()) {
       return res.status(400).json({ message: "You cannot delete your own account" });
+    }
+
+    if (user.role === "admin") {
+      const adminCount = await User.countDocuments({ role: "admin" });
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: "Cannot delete the last remaining admin account" });
+      }
     }
 
     await user.deleteOne();

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import DashboardCard from "../components/DashboardCard";
 import Table from "../components/Table";
 import api from "../services/api";
@@ -6,17 +7,20 @@ import api from "../services/api";
 const ReceptionDashboard = () => {
   const [rooms, setRooms] = useState([]);
   const [reservations, setReservations] = useState([]);
+  const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [roomsRes, reservationsRes] = await Promise.all([
+        const [roomsRes, reservationsRes, complaintsRes] = await Promise.all([
           api.get("/rooms"),
           api.get("/reservations"),
+          api.get("/complaints"),
         ]);
         setRooms(roomsRes.data);
         setReservations(reservationsRes.data);
+        setComplaints(complaintsRes.data);
       } catch (err) {
         console.error("Failed to load dashboard data", err);
       } finally {
@@ -24,6 +28,18 @@ const ReceptionDashboard = () => {
       }
     };
     fetchData();
+
+    // Refresh complaints every 30 seconds so new submissions surface without a manual reload
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await api.get("/complaints");
+        setComplaints(data);
+      } catch (err) {
+        console.error("Failed to refresh complaints", err);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const today = new Date();
@@ -44,6 +60,8 @@ const ReceptionDashboard = () => {
     (r) => r.status === "Occupied" || r.status === "Reserved"
   ).length;
 
+  const pendingComplaints = complaints.filter((c) => c.status === "Pending");
+
   const recent = reservations.slice(0, 5).map((r) => ({
     "Booking ID": r._id.slice(-6).toUpperCase(),
     Customer: r.customer?.name || "N/A",
@@ -58,12 +76,38 @@ const ReceptionDashboard = () => {
 
   return (
     <div className="space-y-8">
+      {/* New complaint notification banner */}
+      {pendingComplaints.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <p className="font-semibold text-red-700">
+              🔔 {pendingComplaints.length} pending complaint{pendingComplaints.length > 1 ? "s" : ""} awaiting review
+            </p>
+            <p className="text-sm text-red-600 mt-1">
+              Latest: "{pendingComplaints[0].description.slice(0, 60)}
+              {pendingComplaints[0].description.length > 60 ? "..." : ""}" — {pendingComplaints[0].customer?.name}
+            </p>
+          </div>
+          <Link
+            to="/receptionist/complaints"
+            className="bg-red-600 text-white px-4 py-2 rounded font-semibold hover:opacity-90 whitespace-nowrap"
+          >
+            View Complaints
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <DashboardCard label="Today's Reservations" value={todaysReservations} icon="📅" />
         <DashboardCard label="Today's Check-ins" value={todaysCheckIns} icon="🧳" color="#16A34A" />
         <DashboardCard label="Today's Check-outs" value={todaysCheckOuts} icon="🚪" color="#D4AF37" />
         <DashboardCard label="Available Rooms" value={availableRooms} icon="✅" color="#16A34A" />
-        <DashboardCard label="Occupied Rooms" value={occupiedRooms} icon="🛏️" color="#DC2626" />
+        <DashboardCard
+          label="Pending Complaints"
+          value={pendingComplaints.length}
+          icon="⚠️"
+          color={pendingComplaints.length > 0 ? "#DC2626" : "#16A34A"}
+        />
       </div>
 
       <div>
@@ -82,4 +126,3 @@ const ReceptionDashboard = () => {
 };
 
 export default ReceptionDashboard;
-

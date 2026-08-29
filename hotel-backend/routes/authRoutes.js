@@ -7,6 +7,7 @@ import {
   resetPassword,
   getAllStaff,
   deleteStaff,
+  getAllCustomers,
 } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { authorize } from "../middleware/roleMiddleware.js";
@@ -20,4 +21,6 @@ router.post("/forgot-password", forgotPassword);
 router.put("/reset-password/:token", resetPassword);
 router.get("/staff", protect, authorize("admin"), getAllStaff);
 router.delete("/staff/:id", protect, authorize("admin"), deleteStaff);
+router.get("/customers", protect, authorize("admin"), getAllCustomers);
+
 export default router;

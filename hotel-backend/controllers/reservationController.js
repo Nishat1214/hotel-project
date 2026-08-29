@@ -6,8 +6,9 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { generateInvoiceNumber } from "./paymentController.js";
 import sendEmail from "../utils/sendEmail.js";
+import { sendSetPasswordEmail } from "../utils/sendSetPasswordEmail.js";
 
-const ADVANCE_PERCENTAGE = 0.2; // 20% advance to confirm booking
+const ADVANCE_PERCENTAGE = 0.2;
 
 const hasOverlap = async (roomId, checkIn, checkOut, excludeReservationId = null) => {
   const query = {
@@ -49,6 +50,32 @@ const sendConfirmationEmail = async (reservation) => {
   });
 };
 
+const sendCancellationEmail = async (reservation) => {
+  const room = await Room.findById(reservation.room);
+  const customer = await User.findById(reservation.customer);
+
+  await sendEmail({
+    to: customer.email,
+    subject: "Reservation Cancelled - GrandStay Hotel",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto;">
+        <h2 style="color: #DC2626;">Reservation Cancelled</h2>
+        <p>Hi ${customer.name},</p>
+        <p>Your reservation has been cancelled. Details:</p>
+        <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+          <tr><td style="padding:4px 0;"><strong>Reservation ID:</strong></td><td>${reservation._id}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Room:</strong></td><td>${room.type.charAt(0).toUpperCase() + room.type.slice(1)} Room ${room.roomNumber}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Check-in:</strong></td><td>${reservation.checkIn.toDateString()}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Advance Paid:</strong></td><td>Tk ${reservation.advanceAmount}</td></tr>
+          <tr><td style="padding:4px 0;"><strong>Refund:</strong></td><td>Non-refundable per our cancellation policy</td></tr>
+        </table>
+        <p>If you believe this was a mistake, please contact the front desk.</p>
+        <p style="color:#888; font-size:12px;">GrandStay Hotel</p>
+      </div>
+    `,
+  });
+};
+
 // Shared logic: run business rule checks and create the reservation + payment
 export const createReservationRecord = async ({
   customerId,
@@ -58,6 +85,7 @@ export const createReservationRecord = async ({
   guests,
   advancePaymentMethod,
   bookingSource,
+  transactionId,
 }) => {
   const checkInDate = new Date(checkIn);
   const checkOutDate = new Date(checkOut);
@@ -72,7 +100,6 @@ export const createReservationRecord = async ({
   if (room.status === "Maintenance") throw { status: 400, message: "This room is under maintenance and cannot be booked" };
   if (guests > room.capacity) throw { status: 400, message: `This room only accommodates up to ${room.capacity} guests` };
 
-  // RULE 1: same customer can't book the same category for overlapping dates
   const sameCustomerOverlap = await Reservation.findOne({
     customer: customerId,
     status: { $ne: "Cancelled" },
@@ -87,15 +114,17 @@ export const createReservationRecord = async ({
     };
   }
 
-  // RULE 2: prevent double-booking this room
   if (await hasOverlap(roomId, checkInDate, checkOutDate)) {
     throw { status: 400, message: "This room was just booked. Please choose a different room or dates." };
   }
 
   const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
   const totalPrice = nights * room.price;
-  const advanceAmount = Math.round(totalPrice * ADVANCE_PERCENTAGE);
-  const balanceAmount = totalPrice - advanceAmount;
+
+  const isPayAtHotel = advancePaymentMethod === "pay_at_hotel";
+  const advanceAmount = isPayAtHotel ? 0 : Math.round(totalPrice * ADVANCE_PERCENTAGE);
+  const balanceAmount = Math.max(0, totalPrice - advanceAmount);
+  const paymentStatus = advanceAmount > 0 ? "Advance Paid" : "Pending";
 
   const reservation = await Reservation.create({
     customer: customerId,
@@ -107,12 +136,12 @@ export const createReservationRecord = async ({
     bookingSource,
     advanceAmount,
     advancePaymentMethod,
+    transactionId,
     balanceAmount,
-    paymentStatus: "Advance Paid",
+    paymentStatus,
     status: "Confirmed",
   });
 
-  // Race-condition safety check
   const conflict = await Reservation.findOne({
     room: roomId,
     _id: { $ne: reservation._id },
@@ -136,14 +165,17 @@ export const createReservationRecord = async ({
     totalAmount: totalPrice,
     advanceAmount,
     advanceMethod: advancePaymentMethod,
-    advancePaidAt: new Date(),
+    advancePaidAt: advanceAmount > 0 ? new Date() : undefined,
+    transactionId,
     balanceAmount,
     balancePaid: false,
-    status: "Advance Paid",
+    status: paymentStatus,
   });
 
-  room.status = "Reserved";
-  await room.save();
+  if (room.status === "Available") {
+    room.status = "Reserved";
+    await room.save();
+  }
 
   try {
     await sendConfirmationEmail(reservation);
@@ -171,7 +203,7 @@ export const bookRoom = async (req, res) => {
       checkIn,
       checkOut,
       guests,
-      advancePaymentMethod: "online", // customers always pay advance via the online gateway
+      advancePaymentMethod: "online",
       bookingSource: "customer",
     });
 
@@ -194,19 +226,19 @@ export const createWalkInBooking = async (req, res) => {
       checkIn,
       checkOut,
       guests,
-      advancePaymentMethod, // cash | card | online
+      advancePaymentMethod, // cash | card | pay_at_hotel
     } = req.body;
 
     if (!guestName || !guestEmail || !guestPhone || !roomId || !checkIn || !checkOut || !guests || !advancePaymentMethod) {
       return res.status(400).json({ message: "Please fill all required fields" });
     }
 
-    if (!["cash", "card", "online"].includes(advancePaymentMethod)) {
+    if (!["cash", "card", "pay_at_hotel"].includes(advancePaymentMethod)) {
       return res.status(400).json({ message: "Invalid advance payment method" });
     }
 
-    // Find existing customer by email, or create a new guest account
     let customer = await User.findOne({ email: guestEmail });
+    let isNewCustomer = false;
     if (!customer) {
       const tempPassword = crypto.randomBytes(6).toString("hex");
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
@@ -217,6 +249,7 @@ export const createWalkInBooking = async (req, res) => {
         password: hashedPassword,
         role: "customer",
       });
+      isNewCustomer = true;
     }
 
     const reservation = await createReservationRecord({
@@ -228,6 +261,14 @@ export const createWalkInBooking = async (req, res) => {
       advancePaymentMethod,
       bookingSource: "receptionist",
     });
+
+    if (isNewCustomer) {
+      try {
+        await sendSetPasswordEmail(customer);
+      } catch (emailErr) {
+        console.error("❌ Failed to send set-password email:", emailErr.message);
+      }
+    }
 
     res.status(201).json(reservation);
   } catch (error) {
@@ -260,6 +301,11 @@ export const cancelReservation = async (req, res) => {
     if (!reservation) return res.status(404).json({ message: "Reservation not found" });
     if (reservation.status === "Completed") return res.status(400).json({ message: "Cannot cancel a completed reservation" });
     if (reservation.status === "Cancelled") return res.status(400).json({ message: "Reservation is already cancelled" });
+    if (reservation.checkedIn) {
+      return res.status(400).json({
+        message: "Guest is already checked in. Use Check-out to end this stay instead of cancelling.",
+      });
+    }
 
     reservation.status = "Cancelled";
     await reservation.save();
@@ -268,6 +314,12 @@ export const cancelReservation = async (req, res) => {
     if (room && (room.status === "Reserved" || room.status === "Occupied")) {
       room.status = "Available";
       await room.save();
+    }
+
+    try {
+      await sendCancellationEmail(reservation);
+    } catch (emailErr) {
+      console.error("❌ Failed to send cancellation email:", emailErr.message);
     }
 
     res.status(200).json({

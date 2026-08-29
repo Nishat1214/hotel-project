@@ -1,16 +1,28 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import api from "../services/api";
 
 const Rooms = () => {
+  const [searchParams] = useSearchParams();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const checkIn = searchParams.get("checkIn");
+  const checkOut = searchParams.get("checkOut");
+  const typeFilter = searchParams.get("type");
+
   useEffect(() => {
     const fetchCategories = async () => {
+      setLoading(true);
       try {
-        const { data } = await api.get("/rooms/categories");
-        setCategories(data);
+        const params = {};
+        if (checkIn && checkOut) {
+          params.checkIn = checkIn;
+          params.checkOut = checkOut;
+        }
+        const { data } = await api.get("/rooms/categories", { params });
+        const filtered = typeFilter ? data.filter((c) => c.type === typeFilter) : data;
+        setCategories(filtered);
       } catch (err) {
         console.error("Failed to load room categories", err);
       } finally {
@@ -18,33 +30,41 @@ const Rooms = () => {
       }
     };
     fetchCategories();
-  }, []);
+  }, [checkIn, checkOut, typeFilter]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       <h1 className="text-3xl font-bold text-[#1E3A8A] mb-2 text-center">Our Rooms</h1>
-      <p className="text-gray-500 text-center mb-10">Choose a room category to explore</p>
+      <p className="text-gray-500 text-center mb-10">
+        {checkIn && checkOut
+          ? `Showing availability for ${new Date(checkIn).toLocaleDateString()} - ${new Date(checkOut).toLocaleDateString()}`
+          : "Choose a room category to explore"}
+      </p>
 
       {loading ? (
         <p className="text-center text-gray-400">Loading rooms...</p>
       ) : categories.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {categories.map((cat) => (
-            <CategoryCard key={cat.type} category={cat} />
+            <CategoryCard key={cat.type} category={cat} checkIn={checkIn} checkOut={checkOut} />
           ))}
         </div>
       ) : (
-        <p className="text-center text-gray-500">No rooms available right now.</p>
+        <p className="text-center text-gray-500">No rooms match your search.</p>
       )}
     </div>
   );
 };
 
-const CategoryCard = ({ category }) => {
+const CategoryCard = ({ category, checkIn, checkOut }) => {
   const isSoldOut = category.availableCount === 0;
   const isLowAvailability = category.availableCount === 3 || category.availableCount === 4;
 
   const displayName = category.type.charAt(0).toUpperCase() + category.type.slice(1) + " Room";
+
+  const detailsLink = `/rooms/category/${category.type}${
+    checkIn && checkOut ? `?checkIn=${checkIn}&checkOut=${checkOut}` : ""
+  }`;
 
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition">
@@ -69,7 +89,7 @@ const CategoryCard = ({ category }) => {
         </div>
 
         <p className="text-[#D4AF37] font-semibold text-lg mb-1">
-          From ${category.minPrice} / Night
+          From Tk {category.minPrice} / Night
         </p>
         <p className="text-gray-500 text-sm mb-3">Capacity: up to {category.capacity} guests</p>
 
@@ -98,7 +118,7 @@ const CategoryCard = ({ category }) => {
           </button>
         ) : (
           <Link
-            to={`/rooms/category/${category.type}`}
+            to={detailsLink}
             className="block w-full text-center bg-[#1E3A8A] text-white py-2 rounded font-semibold hover:opacity-90"
           >
             View Available Rooms
