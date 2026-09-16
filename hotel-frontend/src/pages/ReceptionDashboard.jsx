@@ -29,17 +29,23 @@ const ReceptionDashboard = () => {
     };
     fetchData();
 
-    // Refresh complaints every 30 seconds so new submissions surface without a manual reload
-    const interval = setInterval(async () => {
+    const refreshComplaints = async () => {
       try {
         const { data } = await api.get("/complaints");
         setComplaints(data);
       } catch (err) {
         console.error("Failed to refresh complaints", err);
       }
-    }, 30000);
+    };
 
-    return () => clearInterval(interval);
+    // Background refresh every 30 seconds, plus instant refresh on any status change
+    const interval = setInterval(refreshComplaints, 30000);
+    window.addEventListener("complaints-updated", refreshComplaints);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("complaints-updated", refreshComplaints);
+    };
   }, []);
 
   const today = new Date();
@@ -86,6 +92,9 @@ const ReceptionDashboard = () => {
             <p className="text-sm text-red-600 mt-1">
               Latest: "{pendingComplaints[0].description.slice(0, 60)}
               {pendingComplaints[0].description.length > 60 ? "..." : ""}" — {pendingComplaints[0].customer?.name}
+              {pendingComplaints[0].reservation?.room && (
+                <> ({pendingComplaints[0].reservation.room.type} Room {pendingComplaints[0].reservation.room.roomNumber})</>
+              )}
             </p>
           </div>
           <Link

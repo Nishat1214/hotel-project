@@ -42,6 +42,13 @@ export const checkInGuest = async (req, res) => {
       return res.status(400).json({ message: "Check-in rejected: room is already occupied" });
     }
 
+    // Business rule: guest must settle their bill in Billing before check-in
+    if (reservation.paymentStatus !== "Paid") {
+      return res.status(400).json({
+        message: "Check-in rejected: please settle the bill in Billing before checking in this guest.",
+      });
+    }
+
     reservation.checkedIn = true;
     reservation.actualCheckIn = new Date();
     await reservation.save();
@@ -146,7 +153,8 @@ export const checkOutGuest = async (req, res) => {
         ? `${payment.additionalChargeNotes}; Late checkout fee (${daysLate} extra night${daysLate > 1 ? "s" : ""}): Tk ${lateFee}`
         : `Late checkout fee (${daysLate} extra night${daysLate > 1 ? "s" : ""}): Tk ${lateFee}`;
       payment.totalAmount = payment.roomCharge + payment.additionalCharges;
-      payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+
+      payment.balanceAmount += lateFee;
       payment.balancePaid = false;
       await payment.save();
     }
@@ -157,7 +165,8 @@ export const checkOutGuest = async (req, res) => {
         ? `${payment.additionalChargeNotes}; ${note || "Checkout charge"}: ${additionalCharge}`
         : `${note || "Checkout charge"}: ${additionalCharge}`;
       payment.totalAmount = payment.roomCharge + payment.additionalCharges;
-      payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+
+      payment.balanceAmount += Number(additionalCharge);
       payment.balancePaid = false;
       await payment.save();
     }

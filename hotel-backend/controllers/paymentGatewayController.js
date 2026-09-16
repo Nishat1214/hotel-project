@@ -9,6 +9,7 @@ import Payment from "../models/Payment.js";
 import Reservation from "../models/Reservation.js";
 import { createReservationRecord } from "./reservationController.js";
 import { sendSetPasswordEmail } from "../utils/sendSetPasswordEmail.js";
+import { sendRefundCompletedEmail } from "../utils/sendRefundEmail.js";
 
 const ADVANCE_PERCENTAGE = 0.2;
 
@@ -37,16 +38,14 @@ const buildSslData = ({ tranId, amount, productLabel, customer }) => ({
   ship_country: "Bangladesh",
 });
 
-// @desc   Customer initiates advance payment for a booking via SSLCommerz sandbox
-// @route  POST /api/payments/sslcommerz/init
-// @access Private (Customer)
 export const initSslcommerzPayment = async (req, res) => {
   try {
     const store_id = process.env.SSLCZ_STORE_ID;
     const store_passwd = process.env.SSLCZ_STORE_PASSWORD;
     const is_live = false;
 
-    const { roomId, checkIn, checkOut, guests } = req.body;
+    const { roomId, checkIn, checkOut, guests, paymentOption } = req.body;
+    const chosenOption = paymentOption === "full" ? "full" : "advance";
 
     if (!roomId || !checkIn || !checkOut || !guests) {
       return res.status(400).json({ message: "Please provide all required fields" });
@@ -61,7 +60,7 @@ export const initSslcommerzPayment = async (req, res) => {
     }
 
     const totalPrice = nights * room.price;
-    const advanceAmount = Math.round(totalPrice * ADVANCE_PERCENTAGE);
+    const chargeAmount = chosenOption === "full" ? totalPrice : Math.round(totalPrice * ADVANCE_PERCENTAGE);
     const tranId = `TXN-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
     await PendingBooking.create({
@@ -71,15 +70,16 @@ export const initSslcommerzPayment = async (req, res) => {
       checkIn,
       checkOut,
       guests,
-      advanceAmount,
+      advanceAmount: chargeAmount,
       bookingSource: "customer",
+      paymentOption: chosenOption,
     });
 
     const customer = await User.findById(req.user._id);
     const sslData = buildSslData({
       tranId,
-      amount: advanceAmount,
-      productLabel: `${room.type} Room Advance Payment`,
+      amount: chargeAmount,
+      productLabel: chosenOption === "full" ? `${room.type} Room - Full Payment` : `${room.type} Room Advance Payment`,
       customer,
     });
 
@@ -98,9 +98,6 @@ export const initSslcommerzPayment = async (req, res) => {
   }
 };
 
-// @desc   Receptionist initiates a walk-in guest's advance payment via SSLCommerz sandbox
-// @route  POST /api/payments/sslcommerz/init-walkin
-// @access Private (Admin, Receptionist)
 export const initWalkInSslcommerzPayment = async (req, res) => {
   try {
     const store_id = process.env.SSLCZ_STORE_ID;
@@ -174,9 +171,6 @@ export const initWalkInSslcommerzPayment = async (req, res) => {
   }
 };
 
-// @desc   Admin/Receptionist initiates settling a reservation's remaining balance via SSLCommerz
-// @route  POST /api/payments/sslcommerz/init-balance
-// @access Private (Admin, Receptionist)
 export const initBalanceSslcommerzPayment = async (req, res) => {
   try {
     const store_id = process.env.SSLCZ_STORE_ID;
@@ -228,15 +222,13 @@ export const initBalanceSslcommerzPayment = async (req, res) => {
   }
 };
 
-// @desc   SSLCommerz redirects here after a SUCCESSFUL payment (advance OR balance)
-// @route  POST /api/payments/sslcommerz/success
 export const sslcommerzSuccess = async (req, res) => {
   try {
     const store_id = process.env.SSLCZ_STORE_ID;
     const store_passwd = process.env.SSLCZ_STORE_PASSWORD;
     const is_live = false;
 
-    const { tran_id, val_id } = req.body;
+    const { tran_id, val_id, bank_tran_id } = req.body;
 
     const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
     const validation = await sslcz.validate({ val_id });
@@ -245,7 +237,6 @@ export const sslcommerzSuccess = async (req, res) => {
       return res.redirect(`${process.env.FRONTEND_URL}/booking/fail`);
     }
 
-    // Case 1: this transaction is an ADVANCE payment (new booking)
     const pendingBooking = await PendingBooking.findOne({ tranId: tran_id });
     if (pendingBooking && pendingBooking.status !== "Completed") {
       try {
@@ -258,6 +249,8 @@ export const sslcommerzSuccess = async (req, res) => {
           advancePaymentMethod: "online",
           bookingSource: pendingBooking.bookingSource,
           transactionId: val_id,
+          bankTransactionId: bank_tran_id || validation.bank_tran_id,
+          paymentOption: pendingBooking.paymentOption,
         });
 
         pendingBooking.status = "Completed";
@@ -282,7 +275,6 @@ export const sslcommerzSuccess = async (req, res) => {
       }
     }
 
-    // Case 2: this transaction is a BALANCE settlement (Billing or Checkout)
     const pendingBalance = await PendingBalancePayment.findOne({ tranId: tran_id });
     if (pendingBalance && pendingBalance.status !== "Completed") {
       const payment = await Payment.findById(pendingBalance.payment);
@@ -327,7 +319,6 @@ export const sslcommerzSuccess = async (req, res) => {
   }
 };
 
-// @desc   SSLCommerz redirects here after a FAILED payment
 export const sslcommerzFail = async (req, res) => {
   const { tran_id } = req.body;
   if (tran_id) {
@@ -337,7 +328,6 @@ export const sslcommerzFail = async (req, res) => {
   return res.redirect(`${process.env.FRONTEND_URL}/booking/fail`);
 };
 
-// @desc   SSLCommerz redirects here if the customer CANCELS the payment
 export const sslcommerzCancel = async (req, res) => {
   const { tran_id } = req.body;
   if (tran_id) {
@@ -345,4 +335,70 @@ export const sslcommerzCancel = async (req, res) => {
     await PendingBalancePayment.findOneAndDelete({ tranId: tran_id });
   }
   return res.redirect(`${process.env.FRONTEND_URL}/booking/cancel`);
+};
+
+// @desc   Admin/Receptionist processes an actual SSLCommerz sandbox refund for a
+//         cancelled/no-show reservation that was originally paid online.
+// @route  PUT /api/payments/sslcommerz/refund/:id
+// @access Private (Admin, Receptionist)
+export const processSslcommerzRefund = async (req, res) => {
+  try {
+    const store_id = process.env.SSLCZ_STORE_ID;
+    const store_passwd = process.env.SSLCZ_STORE_PASSWORD;
+    const is_live = false;
+
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    if (payment.refundStatus !== "Refund Due") {
+      return res.status(400).json({ message: "No refund is currently pending for this payment" });
+    }
+
+    const reservation = await Reservation.findById(payment.reservation);
+    if (!reservation || !reservation.refundAmount || reservation.refundAmount <= 0) {
+      return res.status(400).json({ message: "No refund amount recorded for this reservation" });
+    }
+
+    if (payment.advanceMethod !== "online" || !payment.advanceBankTranId) {
+      return res.status(400).json({
+        message: "This payment wasn't made online via SSLCommerz — process the refund manually (cash/card).",
+      });
+    }
+
+    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+
+    const refundResponse = await sslcz.initiateRefund({
+      refund_amount: reservation.refundAmount,
+      refund_remarks: `Refund for cancelled/no-show reservation ${reservation._id}`,
+      bank_tran_id: payment.advanceBankTranId,
+      refe_id: payment.invoiceNumber,
+    });
+
+    if (refundResponse.status !== "success") {
+      return res.status(400).json({
+        message: "SSLCommerz refund request failed",
+        details: refundResponse.errorReason || refundResponse,
+      });
+    }
+
+    payment.refundStatus = "Refunded";
+    await payment.save();
+
+    try {
+      await sendRefundCompletedEmail(payment, "sslcommerz");
+    } catch (emailErr) {
+      console.error("❌ Failed to send refund email:", emailErr.message);
+    }
+
+    res.status(200).json({
+      message: `Refund of Tk ${reservation.refundAmount} processed successfully via SSLCommerz.`,
+      refundResponse,
+      payment,
+    });
+  } catch (error) {
+    console.error("SSLCommerz refund exception:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 };

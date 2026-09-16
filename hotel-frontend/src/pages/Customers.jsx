@@ -1,8 +1,13 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import Table from "../components/Table";
 import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const Customers = () => {
+  const { user } = useAuth();
+  const basePath = user?.role === "admin" ? "/admin" : "/receptionist";
+
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -33,6 +38,11 @@ const Customers = () => {
     Email: c.email,
     Phone: c.phone,
     Joined: new Date(c.createdAt).toLocaleDateString(),
+    Action: (
+      <Link to={`${basePath}/customers/${c._id}`} className="text-[#1E3A8A] hover:underline text-sm">
+        View History
+      </Link>
+    ),
   }));
 
   return (
@@ -55,7 +65,7 @@ const Customers = () => {
           <p className="text-sm text-gray-500 mb-3">
             {filtered.length} customer{filtered.length !== 1 ? "s" : ""}
           </p>
-          <Table columns={["Name", "Email", "Phone", "Joined"]} data={tableData} />
+          <Table columns={["Name", "Email", "Phone", "Joined", "Action"]} data={tableData} />
         </>
       ) : (
         <p className="text-gray-400 text-center py-10">

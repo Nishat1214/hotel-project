@@ -4,6 +4,7 @@ import {
   getComplaints,
   updateComplaint,
   closeComplaint,
+  changeRoomForComplaint,
 } from "../controllers/complaintController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { authorize } from "../middleware/roleMiddleware.js";
@@ -14,5 +15,6 @@ router.post("/", protect, authorize("customer"), submitComplaint);
 router.get("/", protect, getComplaints);
 router.put("/:id", protect, authorize("admin", "receptionist"), updateComplaint);
 router.put("/:id/close", protect, authorize("admin", "receptionist"), closeComplaint);
+router.put("/:id/change-room", protect, authorize("admin", "receptionist"), changeRoomForComplaint);
 
 export default router;

@@ -22,8 +22,15 @@ const Sidebar = ({ menuItems }) => {
     };
 
     fetchCount();
-    const interval = setInterval(fetchCount, 30000); // refresh every 30 seconds
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchCount, 30000); // background refresh every 30 seconds
+
+    // Instant refresh whenever a complaint is submitted, resolved, or closed anywhere in the app
+    window.addEventListener("complaints-updated", fetchCount);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("complaints-updated", fetchCount);
+    };
   }, [user]);
 
   const handleLogout = () => {

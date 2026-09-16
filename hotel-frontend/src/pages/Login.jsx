@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Link, useNavigate, Navigate } from "react-router-dom";
+import { Link, useNavigate, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 
 const Login = () => {
   const { login, user: currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = location.state?.from;
 
   const [email, setEmail] = useState("");
   const [loginRole, setLoginRole] = useState(null);
@@ -37,7 +39,9 @@ const Login = () => {
 
       // Brief confirmation before redirecting
       setTimeout(() => {
-        if (data.role === "admin") navigate("/admin");
+        if (returnTo) {
+          navigate(returnTo);
+        } else if (data.role === "admin") navigate("/admin");
         else if (data.role === "receptionist") navigate("/receptionist");
         else navigate("/customer");
       }, 1200);

@@ -1,9 +1,14 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import Table from "../components/Table";
 import Modal from "../components/Modal";
 import api from "../services/api";
 
 const CheckInOut = () => {
+  const { user } = useAuth();
+  const basePath = user?.role === "admin" ? "/admin" : "/receptionist";
+
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("checkin");
@@ -72,43 +77,22 @@ const CheckInOut = () => {
   };
 
   const handleGenerateBill = () => {
-    const extra = Number(additionalCharge) || 0;
-    setBillPreview((prev) => ({
-      ...prev,
-      additionalCharges: prev.additionalCharges + extra,
-      totalAmount: prev.totalAmount + extra,
-      balanceAmount: prev.balanceAmount + extra,
-    }));
     setStep("confirm");
   };
 
   const handleFinalizeCheckout = async () => {
     setCheckoutError("");
 
-    if (billPreview.balanceAmount > 0 && balanceMethod === "online") {
-      try {
-        if (additionalCharge && Number(additionalCharge) > 0) {
-          await api.put(`/payments/${billPreview.paymentId}/add-charge`, {
-            amount: Number(additionalCharge),
-            note: chargeNote,
-          });
-        }
-        const { data } = await api.post("/payments/sslcommerz/init-balance", {
-          paymentId: billPreview.paymentId,
-          completeCheckout: true,
-        });
-        window.location.href = data.gatewayUrl;
-      } catch (err) {
-        setCheckoutError(err.response?.data?.message || "Failed to start payment");
-      }
-      return;
-    }
+    const finalBalance =
+      billPreview.balanceAmount +
+      (Number(additionalCharge) || 0) +
+      (billPreview.daysLate > 0 ? billPreview.lateFee : 0);
 
     try {
       const { data } = await api.put(`/reservations/${checkoutModal._id}/checkout`, {
         additionalCharge: additionalCharge || 0,
         note: chargeNote,
-        balanceMethod: billPreview.balanceAmount > 0 ? balanceMethod : undefined,
+        balanceMethod: finalBalance > 0 ? balanceMethod : undefined,
       });
       alert(data.message);
       setCheckoutModal(null);
@@ -216,19 +200,33 @@ const CheckInOut = () => {
               <strong>Total Amount:</strong> Tk {checkinModal.totalPrice}
             </p>
 
-            <p className="bg-[#F8FAFC] text-gray-600 text-sm px-3 py-2 rounded mb-4">
-              Payment status: <strong>{checkinModal.paymentStatus}</strong>
-              {checkinModal.paymentStatus !== "Paid" && (
-                <> — remaining balance of Tk {checkinModal.balanceAmount} will be settled at checkout.</>
-              )}
-            </p>
+            {checkinModal.paymentStatus === "Paid" ? (
+              <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
+                ✅ Bill fully paid. Ready to check in.
+              </p>
+            ) : (
+              <p className="bg-red-50 text-red-700 text-sm px-3 py-2 rounded mb-4">
+                ⚠️ Balance of Tk {checkinModal.balanceAmount} is unpaid. Please settle the bill in
+                Billing before checking in this guest.
+              </p>
+            )}
 
             <button
               onClick={handleCheckinSubmit}
-              className="w-full bg-[#1E3A8A] text-white py-2 rounded hover:opacity-90"
+              disabled={checkinModal.paymentStatus !== "Paid"}
+              className="w-full bg-[#1E3A8A] text-white py-2 rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Check In Guest
             </button>
+
+            {checkinModal.paymentStatus !== "Paid" && (
+              <Link
+                to={`${basePath}/billing`}
+                className="block text-center text-[#1E3A8A] text-sm font-semibold hover:underline mt-3"
+              >
+                Go to Billing →
+              </Link>
+            )}
           </div>
         )}
       </Modal>
@@ -255,7 +253,11 @@ const CheckInOut = () => {
                 <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
                   <p>Advance paid: Tk {billPreview.advanceAmount} ({billPreview.advanceMethod})</p>
-                  <p>Balance so far: Tk {billPreview.balanceAmount}</p>
+                  {billPreview.balancePaid ? (
+                    <p className="text-green-600 font-medium">✅ Balance already settled</p>
+                  ) : (
+                    <p>Balance so far: Tk {billPreview.balanceAmount}</p>
+                  )}
                   {billPreview.daysLate > 0 && (
                     <p className="text-red-600 font-medium pt-1 border-t mt-1">
                       ⚠️ {billPreview.daysLate} day{billPreview.daysLate > 1 ? "s" : ""} late — Tk{" "}
@@ -297,7 +299,17 @@ const CheckInOut = () => {
                 <div className="bg-[#F8FAFC] rounded p-4 mb-4 text-sm space-y-1">
                   <p className="font-semibold text-[#1E3A8A] mb-2">📄 Final Invoice</p>
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
-                  <p>Additional charges: Tk {billPreview.additionalCharges}</p>
+                  <p>
+                    Additional charges: Tk{" "}
+                    {billPreview.additionalCharges +
+                      (Number(additionalCharge) || 0) +
+                      (billPreview.daysLate > 0 ? billPreview.lateFee : 0)}
+                  </p>
+                  {Number(additionalCharge) > 0 && (
+                    <p className="text-gray-500 text-xs">
+                      (includes Tk {Number(additionalCharge)} manual charge)
+                    </p>
+                  )}
                   {billPreview.daysLate > 0 && (
                     <p className="text-red-600 text-xs">
                       (includes Tk {billPreview.lateFee} late checkout fee for {billPreview.daysLate} extra day
@@ -306,24 +318,31 @@ const CheckInOut = () => {
                   )}
                   <p>Advance already paid: Tk {billPreview.advanceAmount}</p>
                   <p className="font-bold text-lg pt-2 border-t mt-2">
-                    Balance Due Now: Tk {billPreview.balanceAmount}
+                    Balance Due Now: Tk{" "}
+                    {billPreview.balanceAmount +
+                      (Number(additionalCharge) || 0) +
+                      (billPreview.daysLate > 0 ? billPreview.lateFee : 0)}
                   </p>
                 </div>
 
-                {billPreview.balanceAmount > 0 ? (
-                  <>
-                    <label className="block text-sm font-medium mb-1">Balance Payment Method</label>
-                    <select
-                      value={balanceMethod}
-                      onChange={(e) => setBalanceMethod(e.target.value)}
-                      className="w-full border rounded px-3 py-2 mb-3"
-                    >
-                      <option value="cash">Cash</option>
-                      <option value="card">Card</option>
-                      <option value="online">Online (SSLCommerz)</option>
-                    </select>
+                {(() => {
+                  const finalBalance =
+                    billPreview.balanceAmount +
+                    (Number(additionalCharge) || 0) +
+                    (billPreview.daysLate > 0 ? billPreview.lateFee : 0);
 
-                    {balanceMethod !== "online" && (
+                  return finalBalance > 0 ? (
+                    <>
+                      <label className="block text-sm font-medium mb-1">Balance Payment Method</label>
+                      <select
+                        value={balanceMethod}
+                        onChange={(e) => setBalanceMethod(e.target.value)}
+                        className="w-full border rounded px-3 py-2 mb-3"
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                      </select>
+
                       <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
                         <input
                           type="checkbox"
@@ -332,17 +351,16 @@ const CheckInOut = () => {
                           className="mt-0.5"
                         />
                         <span>
-                          I confirm the balance of Tk {billPreview.balanceAmount} has been received via{" "}
-                          {balanceMethod}.
+                          I confirm the balance of Tk {finalBalance} has been received via {balanceMethod}.
                         </span>
                       </label>
-                    )}
-                  </>
-                ) : (
-                  <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
-                    ✅ No outstanding balance — ready to complete check-out.
-                  </p>
-                )}
+                    </>
+                  ) : (
+                    <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
+                      ✅ No outstanding balance — ready to complete check-out.
+                    </p>
+                  );
+                })()}
 
                 <div className="flex gap-2">
                   <button
@@ -353,12 +371,15 @@ const CheckInOut = () => {
                   </button>
                   <button
                     onClick={handleFinalizeCheckout}
-                    disabled={billPreview.balanceAmount > 0 && balanceMethod !== "online" && !finalPaymentConfirmed}
+                    disabled={
+                      billPreview.balanceAmount +
+                        (Number(additionalCharge) || 0) +
+                        (billPreview.daysLate > 0 ? billPreview.lateFee : 0) >
+                        0 && !finalPaymentConfirmed
+                    }
                     className="flex-1 bg-green-600 text-white py-2 rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {balanceMethod === "online" && billPreview.balanceAmount > 0
-                      ? "Pay via SSLCommerz"
-                      : "Complete Check-out"}
+                    Complete Check-out
                   </button>
                 </div>
               </>

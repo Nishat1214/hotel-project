@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import MainLayout from "../layouts/MainLayout";
 import DashboardLayout from "../layouts/DashboardLayout";
 import ProtectedRoute from "../components/common/ProtectedRoute";
+import HomeRedirect from "../components/common/HomeRedirect";
 
 import Home from "../pages/Home";
 import Rooms from "../pages/Rooms";
@@ -22,6 +23,8 @@ import SubmitComplaint from "../pages/SubmitComplaint";
 import MyReservations from "../pages/MyReservations";
 import Reports from "../pages/Reports";
 import Users from "../pages/Users";
+import Customers from "../pages/Customers";
+import CustomerHistory from "../pages/CustomerHistory";
 import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
 import RoomCategoryDetails from "../pages/RoomCategoryDetails";
@@ -33,10 +36,7 @@ import WriteReview from "../pages/WriteReview";
 import BalanceSuccess from "../pages/BalanceSuccess";
 import About from "../pages/About";
 import Contact from "../pages/Contact";
-import Customers from "../pages/Customers";
-import HomeRedirect from "../components/common/HomeRedirect";
 
-// Sidebar menus for each role
 const customerMenu = [
   { label: "Dashboard", path: "/customer" },
   { label: "My Reservations", path: "/customer/reservations" },
@@ -48,7 +48,9 @@ const adminMenu = [
   { label: "Dashboard", path: "/admin" },
   { label: "Rooms", path: "/admin/rooms" },
   { label: "Reservations", path: "/admin/reservations" },
-  { label: "Users", path: "/admin/users" },
+  { label: "Check-in/out", path: "/admin/checkin" },
+  { label: "Billing", path: "/admin/billing" },
+  { label: "Staff", path: "/admin/users" },
   { label: "Customers", path: "/admin/customers" },
   { label: "Complaints", path: "/admin/complaints" },
   { label: "Reports", path: "/admin/reports" },
@@ -60,6 +62,7 @@ const receptionMenu = [
   { label: "Reservations", path: "/receptionist/reservations" },
   { label: "Check-in", path: "/receptionist/checkin" },
   { label: "Billing", path: "/receptionist/billing" },
+  { label: "Customers", path: "/receptionist/customers" },
   { label: "Complaints", path: "/receptionist/complaints" },
 ];
 
@@ -68,7 +71,7 @@ function AppRoutes() {
     <Routes>
       {/* Public site with Navbar + Footer */}
       <Route element={<MainLayout />}>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<HomeRedirect />} />
         <Route path="/rooms" element={<Rooms />} />
         <Route path="/rooms/:id" element={<RoomDetails />} />
         <Route path="/login" element={<Login />} />
@@ -109,10 +112,13 @@ function AppRoutes() {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/rooms" element={<RoomManagement />} />
         <Route path="/admin/reservations" element={<ReservationManagement />} />
+        <Route path="/admin/checkin" element={<CheckInOut />} />
+        <Route path="/admin/billing" element={<Billing />} />
         <Route path="/admin/complaints" element={<ComplaintManagement />} />
         <Route path="/admin/reports" element={<Reports />} />
         <Route path="/admin/users" element={<Users />} />
         <Route path="/admin/customers" element={<Customers />} />
+        <Route path="/admin/customers/:id" element={<CustomerHistory />} />
       </Route>
 
       {/* Receptionist dashboard */}
@@ -129,6 +135,8 @@ function AppRoutes() {
         <Route path="/receptionist/billing" element={<Billing />} />
         <Route path="/receptionist/complaints" element={<ComplaintManagement />} />
         <Route path="/receptionist/walkin" element={<WalkInBooking />} />
+        <Route path="/receptionist/customers" element={<Customers />} />
+        <Route path="/receptionist/customers/:id" element={<CustomerHistory />} />
       </Route>
 
       {/* Catch-all */}

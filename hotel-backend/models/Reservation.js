@@ -24,7 +24,8 @@ const reservationSchema = new mongoose.Schema(
       default: "customer",
     },
 
-      advanceAmount: { type: Number, required: true },
+    // Advance / initial payment (confirms the booking)
+    advanceAmount: { type: Number, required: true },
     advancePaymentMethod: {
       type: String,
       enum: ["online", "cash", "card", "pay_at_hotel"],
@@ -43,8 +44,13 @@ const reservationSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Confirmed", "Cancelled", "Completed"],
+      enum: ["Confirmed", "Cancelled", "Completed", "No-Show"],
       default: "Confirmed", // advance payment confirms the booking immediately
+    },
+
+    refundAmount: {
+      type: Number,
+      default: 0,
     },
 
     checkedIn: { type: Boolean, default: false },

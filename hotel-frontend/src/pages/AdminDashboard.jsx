@@ -65,9 +65,14 @@ const AdminDashboard = () => {
         const occupiedRooms = rooms.filter(
           (r) => r.status === "Occupied" || r.status === "Reserved"
         ).length;
-        const revenue = reservations
-          .filter((r) => r.paymentStatus === "Paid")
-          .reduce((sum, r) => sum + r.totalPrice, 0);
+
+        // Revenue = money actually collected so far, not the full booking price.
+        // Every reservation has at least paid its advance; fully-settled ones have paid it all.
+        const revenue = reservations.reduce((sum, r) => {
+          if (r.status === "Cancelled") return sum + r.advanceAmount; // advance kept per policy
+          if (r.paymentStatus === "Paid") return sum + r.totalPrice;
+          return sum + r.advanceAmount; // still owed: balance not yet collected
+        }, 0);
 
         setStats({
           totalRooms: rooms.length,
@@ -112,7 +117,7 @@ const AdminDashboard = () => {
         <DashboardCard label="Total Rooms" value={stats.totalRooms} icon="🏨" />
         <DashboardCard label="Available Rooms" value={stats.availableRooms} icon="✅" color="#16A34A" />
         <DashboardCard label="Occupied Rooms" value={stats.occupiedRooms} icon="🛏️" color="#D4AF37" />
-        <DashboardCard label="Revenue" value={`৳${stats.revenue}`} icon="💰" color="#16A34A" />
+        <DashboardCard label="Revenue" value={`Tk ${stats.revenue}`} icon="💰" color="#16A34A" />
         <DashboardCard label="Complaints" value={stats.complaints} icon="⚠️" color="#DC2626" />
       </div>
 

@@ -14,6 +14,11 @@ const pendingBookingSchema = new mongoose.Schema(
       enum: ["customer", "receptionist"],
       default: "customer",
     },
+    paymentOption: {
+      type: String,
+      enum: ["advance", "full"],
+      default: "advance",
+    },
     isNewCustomer: { type: Boolean, default: false },
     status: {
       type: String,

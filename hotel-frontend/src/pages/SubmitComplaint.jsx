@@ -19,6 +19,7 @@ const SubmitComplaint = () => {
       const { data } = await api.post("/complaints", { description: text });
       setSubmitted(data);
       setText("");
+      window.dispatchEvent(new Event("complaints-updated"));
     } catch (err) {
       if (err.response?.status === 403) {
         setNotCheckedIn(true);

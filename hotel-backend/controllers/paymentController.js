@@ -1,16 +1,13 @@
 import Payment from "../models/Payment.js";
 import Reservation from "../models/Reservation.js";
+import { sendRefundCompletedEmail } from "../utils/sendRefundEmail.js";
 
-// Helper: generate a simple unique invoice number
 export const generateInvoiceNumber = () => {
   const timestamp = Date.now().toString().slice(-8);
   const random = Math.floor(1000 + Math.random() * 9000);
   return `INV-${timestamp}-${random}`;
 };
 
-// @desc   Get all payments (Admin/Receptionist)
-// @route  GET /api/payments
-// @access Private (Admin, Receptionist)
 export const getAllPayments = async (req, res) => {
   try {
     const payments = await Payment.find()
@@ -27,9 +24,6 @@ export const getAllPayments = async (req, res) => {
   }
 };
 
-// @desc   Get a single payment by reservation ID
-// @route  GET /api/payments/reservation/:reservationId
-// @access Private
 export const getPaymentByReservation = async (req, res) => {
   try {
     const payment = await Payment.findOne({ reservation: req.params.reservationId })
@@ -49,9 +43,6 @@ export const getPaymentByReservation = async (req, res) => {
   }
 };
 
-// @desc   Add an additional service charge to a payment (e.g. minibar, damage)
-// @route  PUT /api/payments/:id/add-charge
-// @access Private (Admin, Receptionist)
 export const addAdditionalCharge = async (req, res) => {
   try {
     const { amount, note } = req.body;
@@ -70,7 +61,8 @@ export const addAdditionalCharge = async (req, res) => {
       ? `${payment.additionalChargeNotes}; ${note || "Additional charge"}: ${amount}`
       : `${note || "Additional charge"}: ${amount}`;
     payment.totalAmount = payment.roomCharge + payment.additionalCharges;
-    payment.balanceAmount = Math.max(0, payment.totalAmount - payment.advanceAmount);
+
+    payment.balanceAmount += Number(amount);
     payment.balancePaid = false;
 
     await payment.save();
@@ -81,9 +73,6 @@ export const addAdditionalCharge = async (req, res) => {
   }
 };
 
-// @desc   Settle the outstanding balance for a payment (e.g. from Billing page directly)
-// @route  PUT /api/payments/:id/settle-balance
-// @access Private (Admin, Receptionist)
 export const settleBalance = async (req, res) => {
   try {
     const { balanceMethod } = req.body;
@@ -114,6 +103,35 @@ export const settleBalance = async (req, res) => {
     }
 
     res.status(200).json({ message: "Balance settled successfully", payment });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc   Mark a pending refund as completed (Admin/Receptionist confirms they've paid it out)
+// @route  PUT /api/payments/:id/mark-refunded
+// @access Private (Admin, Receptionist)
+export const markRefunded = async (req, res) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    if (payment.refundStatus !== "Refund Due") {
+      return res.status(400).json({ message: "No refund is currently pending for this payment" });
+    }
+
+    payment.refundStatus = "Refunded";
+    await payment.save();
+
+    try {
+      await sendRefundCompletedEmail(payment, "manual");
+    } catch (emailErr) {
+      console.error("❌ Failed to send refund email:", emailErr.message);
+    }
+
+    res.status(200).json({ message: "Refund marked as completed", payment });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }

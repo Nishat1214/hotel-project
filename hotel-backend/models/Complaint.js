@@ -34,8 +34,9 @@ const complaintSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    assignedDepartment: {
-      type: String, // set by receptionist/admin — may differ from AI suggestion
+    assignedDepartments: {
+      type: [String], // set by receptionist/admin — may differ from AI suggestion; supports multiple
+      default: [],
     },
     status: {
       type: String,

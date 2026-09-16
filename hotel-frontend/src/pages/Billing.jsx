@@ -79,6 +79,30 @@ const Billing = () => {
     }
   };
 
+  const handleMarkRefunded = async () => {
+    if (!confirm("Confirm that the refund has been paid out to the guest?")) return;
+    try {
+      const { data } = await api.put(`/payments/${selectedPayment._id}/mark-refunded`);
+      setSelectedPayment(data.payment);
+      fetchPayments();
+      alert(data.message);
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to mark refund as completed");
+    }
+  };
+
+  const handleSslcommerzRefund = async () => {
+    if (!confirm("Process this refund through SSLCommerz sandbox now?")) return;
+    try {
+      const { data } = await api.put(`/payments/sslcommerz/refund/${selectedPayment._id}`);
+      setSelectedPayment(data.payment);
+      fetchPayments();
+      alert(data.message);
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to process SSLCommerz refund");
+    }
+  };
+
   const tableData = payments.map((p) => ({
     Invoice: p.invoiceNumber,
     Customer: p.customer?.name || "N/A",
@@ -88,6 +112,18 @@ const Billing = () => {
     Total: `Tk ${p.totalAmount}`,
     Advance: `Tk ${p.advanceAmount}`,
     Balance: `Tk ${p.balanceAmount}`,
+    Refund:
+      p.refundStatus && p.refundStatus !== "None" ? (
+        <span
+          className={`px-2 py-1 rounded-full text-xs font-medium ${
+            p.refundStatus === "Refund Due" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
+          }`}
+        >
+          {p.refundStatus}
+        </span>
+      ) : (
+        "—"
+      ),
     Status: (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[p.status]}`}>
         {p.status}
@@ -108,7 +144,7 @@ const Billing = () => {
         <p className="text-gray-400 text-center py-10">Loading invoices...</p>
       ) : payments.length > 0 ? (
         <Table
-          columns={["Invoice", "Customer", "Room", "Total", "Advance", "Balance", "Status", "Action"]}
+          columns={["Invoice", "Customer", "Room", "Total", "Advance", "Balance", "Refund", "Status", "Action"]}
           data={tableData}
         />
       ) : (
@@ -149,6 +185,37 @@ const Billing = () => {
             </div>
 
             <p><strong>Status:</strong> {selectedPayment.status}</p>
+            {selectedPayment.refundStatus && selectedPayment.refundStatus !== "None" && (
+              <p
+                className={
+                  selectedPayment.refundStatus === "Refund Due"
+                    ? "bg-orange-50 text-orange-700 px-3 py-2 rounded"
+                    : "bg-green-50 text-green-700 px-3 py-2 rounded"
+                }
+              >
+                <strong>Refund Status:</strong> {selectedPayment.refundStatus}
+              </p>
+            )}
+
+            {selectedPayment.refundStatus === "Refund Due" && (
+              <>
+                {selectedPayment.advanceMethod === "online" && selectedPayment.advanceBankTranId ? (
+                  <button
+                    onClick={handleSslcommerzRefund}
+                    className="w-full bg-orange-500 text-white py-2 rounded text-sm font-semibold hover:opacity-90"
+                  >
+                    Refund via SSLCommerz (Sandbox)
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleMarkRefunded}
+                    className="w-full bg-orange-500 text-white py-2 rounded text-sm font-semibold hover:opacity-90"
+                  >
+                    Mark Refund as Completed (Manual)
+                  </button>
+                )}
+              </>
+            )}
 
             {!selectedPayment.balancePaid && selectedPayment.balanceAmount > 0 && (
               <>

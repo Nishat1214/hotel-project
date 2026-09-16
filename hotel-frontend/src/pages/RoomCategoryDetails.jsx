@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
 import api from "../services/api";
 
 const ADVANCE_PERCENTAGE = 0.2;
@@ -10,15 +9,17 @@ const RoomCategoryDetails = () => {
   const { type } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [rooms, setRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [loading, setLoading] = useState(true);
 
-   const [searchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [checkIn, setCheckIn] = useState(searchParams.get("checkIn") || "");
   const [checkOut, setCheckOut] = useState(searchParams.get("checkOut") || "");
   const [guests, setGuests] = useState(1);
+  const [paymentOption, setPaymentOption] = useState("advance"); // "advance" | "full"
   const [bookingError, setBookingError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -67,7 +68,10 @@ const RoomCategoryDetails = () => {
     setBookingError("");
 
     if (!user) {
-      navigate("/login");
+      // Remember exactly what the guest was about to book, so after logging in
+      // they land right back here with the same room and dates pre-filled.
+      const returnUrl = `${location.pathname}?checkIn=${checkIn}&checkOut=${checkOut}`;
+      navigate("/login", { state: { from: returnUrl } });
       return;
     }
 
@@ -78,6 +82,7 @@ const RoomCategoryDetails = () => {
         checkIn,
         checkOut,
         guests: Number(guests),
+        paymentOption,
       });
 
       window.location.href = data.gatewayUrl;
@@ -202,19 +207,51 @@ const RoomCategoryDetails = () => {
               Max {selectedRoom?.capacity ?? "—"} guests
             </p>
 
-            {nights > 0 && selectedRoom && (
-              <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
-                <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom.price}</p>
-                <p className="font-bold text-[#1E3A8A]">Total: Tk {totalPrice}</p>
-                <div className="pt-2 border-t mt-2">
-                  <p className="text-[#D4AF37] font-semibold">
-                    Advance to pay now (20%): Tk {advanceAmount}
-                  </p>
-                  <p className="text-gray-500 text-xs">
-                    Remaining Tk {balanceAmount} due at checkout
-                  </p>
+            {nights > 0 && (
+              <>
+                <label className="block text-sm font-medium mb-2">Payment Option</label>
+                <div className="flex gap-4 mb-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="paymentOption"
+                      value="advance"
+                      checked={paymentOption === "advance"}
+                      onChange={(e) => setPaymentOption(e.target.value)}
+                    />
+                    Pay Advance (20%)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="paymentOption"
+                      value="full"
+                      checked={paymentOption === "full"}
+                      onChange={(e) => setPaymentOption(e.target.value)}
+                    />
+                    Pay Full Amount Now
+                  </label>
                 </div>
-              </div>
+
+                <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
+                  <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom?.price}</p>
+                  <p className="font-bold text-[#1E3A8A]">Total: Tk {totalPrice}</p>
+                  {paymentOption === "full" ? (
+                    <p className="text-green-600 font-semibold pt-2 border-t mt-2">
+                      Paying in full now — nothing due at checkout
+                    </p>
+                  ) : (
+                    <div className="pt-2 border-t mt-2">
+                      <p className="text-[#D4AF37] font-semibold">
+                        Advance to pay now (20%): Tk {advanceAmount}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        Remaining Tk {balanceAmount} due at checkout
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             <button
@@ -226,9 +263,11 @@ const RoomCategoryDetails = () => {
                 ? "Redirecting to payment gateway..."
                 : rooms.length === 0
                 ? "No rooms available for these dates"
-                : nights > 0
-                ? `Pay Advance (Tk ${advanceAmount}) via SSLCommerz`
-                : "Select dates to continue"}
+                : nights === 0
+                ? "Select dates to continue"
+                : paymentOption === "full"
+                ? `Pay Full Amount (Tk ${totalPrice}) via SSLCommerz`
+                : `Pay Advance (Tk ${advanceAmount}) via SSLCommerz`}
             </button>
 
             <p className="text-xs text-gray-500 text-center mt-3">

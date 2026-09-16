@@ -9,6 +9,7 @@ const WalkInBooking = () => {
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({ email: "", phone: "" });
 
   const [roomType, setRoomType] = useState("standard");
   const [availableRooms, setAvailableRooms] = useState([]);
@@ -18,7 +19,8 @@ const WalkInBooking = () => {
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(1);
-  const [advanceMethod, setAdvanceMethod] = useState("cash"); // cash | online
+  const [advanceMethod, setAdvanceMethod] = useState("cash"); // cash | card
+  const [paymentOption, setPaymentOption] = useState("advance"); // "advance" | "full"
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
@@ -57,6 +59,11 @@ const WalkInBooking = () => {
     setError("");
     setSuccess(null);
 
+    if (fieldErrors.email || fieldErrors.phone) {
+      setError("Please fix the errors in the form before submitting");
+      return;
+    }
+
     if (!selectedRoomId) {
       setError("Please select a room");
       return;
@@ -72,20 +79,15 @@ const WalkInBooking = () => {
       checkIn,
       checkOut,
       guests: Number(guests),
+      paymentOption,
     };
 
     try {
-      if (advanceMethod === "online") {
-        const { data } = await api.post("/payments/sslcommerz/init-walkin", payload);
-        window.location.href = data.gatewayUrl;
-        return;
-      } else {
-        const { data } = await api.post("/reservations/walkin", {
-          ...payload,
-          advancePaymentMethod: advanceMethod,
-        });
-        setSuccess(data);
-      }
+      const { data } = await api.post("/reservations/walkin", {
+        ...payload,
+        advancePaymentMethod: advanceMethod,
+      });
+      setSuccess(data);
     } catch (err) {
       setError(err.response?.data?.message || "Booking failed. Please try again.");
     } finally {
@@ -103,7 +105,7 @@ const WalkInBooking = () => {
           <p><strong>Reservation ID:</strong> {success._id.slice(-6).toUpperCase()}</p>
           <p><strong>Guest:</strong> {guestName}</p>
           <p>
-            <strong>Advance Paid ({success.advancePaymentMethod}):</strong> Tk {success.advanceAmount}
+            <strong>Paid Now ({success.advancePaymentMethod}):</strong> Tk {success.advanceAmount}
           </p>
           <p><strong>Balance Due at Checkout:</strong> Tk {success.balanceAmount}</p>
           <div className="flex gap-3 pt-3">
@@ -122,6 +124,8 @@ const WalkInBooking = () => {
                 setCheckIn("");
                 setCheckOut("");
                 setGuests(1);
+                setPaymentOption("advance");
+                setFieldErrors({ email: "", phone: "" });
               }}
               className="border border-[#1E3A8A] text-[#1E3A8A] px-4 py-2 rounded font-semibold hover:bg-gray-50"
             >
@@ -150,18 +154,40 @@ const WalkInBooking = () => {
                 type="tel"
                 placeholder="Phone (digits only)"
                 value={guestPhone}
-                onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => {
+                  const digitsOnly = e.target.value.replace(/\D/g, "");
+                  setGuestPhone(digitsOnly);
+                  setFieldErrors((prev) => ({
+                    ...prev,
+                    phone: digitsOnly.length > 0 && digitsOnly.length < 10 ? "Phone number seems too short" : "",
+                  }));
+                }}
                 required
-                className="border rounded px-3 py-2"
+                inputMode="numeric"
+                className={`border rounded px-3 py-2 ${fieldErrors.phone ? "border-red-400" : ""}`}
               />
               <input
                 type="email"
                 placeholder="Email"
                 value={guestEmail}
-                onChange={(e) => setGuestEmail(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setGuestEmail(value);
+                  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                  setFieldErrors((prev) => ({
+                    ...prev,
+                    email: value.length > 0 && !emailRegex.test(value) ? "Please enter a valid email address" : "",
+                  }));
+                }}
                 required
-                className="border rounded px-3 py-2 sm:col-span-2"
+                className={`border rounded px-3 py-2 sm:col-span-2 ${fieldErrors.email ? "border-red-400" : ""}`}
               />
+              {fieldErrors.email && (
+                <p className="text-red-500 text-xs sm:col-span-2 -mt-2">{fieldErrors.email}</p>
+              )}
+              {fieldErrors.phone && (
+                <p className="text-red-500 text-xs sm:col-span-2 -mt-2">{fieldErrors.phone}</p>
+              )}
             </div>
           </div>
 
@@ -243,18 +269,52 @@ const WalkInBooking = () => {
           </div>
 
           {nights > 0 && selectedRoom && (
-            <div className="bg-[#F8FAFC] rounded p-3 text-sm space-y-1">
-              <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom.price}</p>
-              <p className="font-bold text-[#1E3A8A]">Total: Tk {totalPrice}</p>
-              <p className="text-[#D4AF37] font-semibold pt-1 border-t mt-1">
-                Advance (20%): Tk {advanceAmount}
-              </p>
-              <p className="text-gray-500 text-xs">Balance Tk {balanceAmount} due at checkout</p>
-            </div>
+            <>
+              <label className="block text-sm font-medium mb-2">Payment Amount</label>
+              <div className="flex gap-4 mb-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="paymentOption"
+                    value="advance"
+                    checked={paymentOption === "advance"}
+                    onChange={(e) => setPaymentOption(e.target.value)}
+                  />
+                  Advance Only (20%)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="paymentOption"
+                    value="full"
+                    checked={paymentOption === "full"}
+                    onChange={(e) => setPaymentOption(e.target.value)}
+                  />
+                  Pay Full Amount Now
+                </label>
+              </div>
+
+              <div className="bg-[#F8FAFC] rounded p-3 text-sm space-y-1">
+                <p>{nights} night{nights > 1 ? "s" : ""} × Tk {selectedRoom.price}</p>
+                <p className="font-bold text-[#1E3A8A]">Total: Tk {totalPrice}</p>
+                {paymentOption === "full" ? (
+                  <p className="text-green-600 font-semibold pt-1 border-t mt-1">
+                    Collecting full amount now — ready to check in immediately
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-[#D4AF37] font-semibold pt-1 border-t mt-1">
+                      Advance (20%): Tk {advanceAmount}
+                    </p>
+                    <p className="text-gray-500 text-xs">Balance Tk {balanceAmount} due at checkout</p>
+                  </>
+                )}
+              </div>
+            </>
           )}
 
           <div>
-            <h3 className="font-semibold text-[#1E3A8A] mb-2">Advance Payment Method</h3>
+            <h3 className="font-semibold text-[#1E3A8A] mb-2">Payment Method</h3>
             <div className="flex flex-wrap gap-4">
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -270,11 +330,11 @@ const WalkInBooking = () => {
                 <input
                   type="radio"
                   name="advanceMethod"
-                  value="online"
-                  checked={advanceMethod === "online"}
+                  value="card"
+                  checked={advanceMethod === "card"}
                   onChange={(e) => setAdvanceMethod(e.target.value)}
                 />
-                Card / Mobile Banking (SSLCommerz)
+                Card (collected now)
               </label>
             </div>
           </div>
@@ -286,9 +346,9 @@ const WalkInBooking = () => {
           >
             {submitting
               ? "Processing..."
-              : advanceMethod === "cash"
-              ? `Confirm Booking (Cash Advance Tk ${advanceAmount})`
-              : `Proceed to SSLCommerz (Tk ${advanceAmount})`}
+              : paymentOption === "full"
+              ? `Confirm Booking (${advanceMethod === "cash" ? "Cash" : "Card"} — Full Tk ${totalPrice})`
+              : `Confirm Booking (${advanceMethod === "cash" ? "Cash" : "Card"} Advance Tk ${advanceAmount})`}
           </button>
         </form>
       )}

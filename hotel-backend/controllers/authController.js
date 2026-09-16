@@ -1,6 +1,9 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import User from "../models/User.js";
+import Reservation from "../models/Reservation.js";
+import Complaint from "../models/Complaint.js";
+import Payment from "../models/Payment.js";
 import generateToken from "../utils/generateToken.js";
 import sendEmail from "../utils/sendEmail.js";
 
@@ -217,9 +220,9 @@ export const getAllStaff = async (req, res) => {
   }
 };
 
-// @desc   Get all customer accounts (Admin only)
+// @desc   Get all customer accounts (Admin, Receptionist)
 // @route  GET /api/auth/customers
-// @access Private (Admin only)
+// @access Private (Admin, Receptionist)
 export const getAllCustomers = async (req, res) => {
   try {
     const customers = await User.find({ role: "customer" })
@@ -227,6 +230,56 @@ export const getAllCustomers = async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.status(200).json(customers);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc   Get a single customer's profile + full reservation, complaint, and payment history
+// @route  GET /api/auth/customers/:id
+// @access Private (Admin, Receptionist)
+export const getCustomerHistory = async (req, res) => {
+  try {
+    const customer = await User.findOne({ _id: req.params.id, role: "customer" }).select("-password");
+    if (!customer) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    const reservations = await Reservation.find({ customer: customer._id })
+      .populate("room", "roomNumber type")
+      .sort({ createdAt: -1 });
+
+    const complaints = await Complaint.find({ customer: customer._id })
+      .sort({ createdAt: -1 });
+
+    const payments = await Payment.find({ customer: customer._id })
+      .sort({ createdAt: -1 });
+
+    // Net revenue kept from this customer: money actually paid, minus anything
+    // that has since been refunded back to them.
+    const totalPaid = payments.reduce((sum, p) => {
+      const amountPaid = p.advanceAmount + (p.balancePaid ? p.totalAmount - p.advanceAmount : 0);
+      const relatedReservation = reservations.find((r) => r._id.toString() === p.reservation.toString());
+      const refunded = p.refundStatus === "Refunded" ? relatedReservation?.refundAmount || 0 : 0;
+      return sum + (amountPaid - refunded);
+    }, 0);
+
+    const refundsDue = payments.filter((p) => p.refundStatus === "Refund Due");
+    const totalRefundsDue = reservations
+      .filter((r) => (r.status === "Cancelled" || r.status === "No-Show") && r.refundAmount > 0)
+      .reduce((sum, r) => sum + r.refundAmount, 0);
+
+    const summary = {
+      totalStays: reservations.filter((r) => r.status === "Completed").length,
+      cancelled: reservations.filter((r) => r.status === "Cancelled").length,
+      noShows: reservations.filter((r) => r.status === "No-Show").length,
+      totalComplaints: complaints.length,
+      totalPaid,
+      refundsDueCount: refundsDue.length,
+      totalRefundsDue,
+    };
+
+    res.status(200).json({ customer, reservations, complaints, payments, summary });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
