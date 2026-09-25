@@ -38,7 +38,7 @@ const reservationData = [
 ];
 
 const COLORS = ["#1E3A8A", "#D4AF37"];
-
+//
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
     totalRooms: 0,
@@ -53,13 +53,15 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [roomsRes, reservationsRes] = await Promise.all([
+        const [roomsRes, reservationsRes, complaintsRes] = await Promise.all([
           api.get("/rooms"),
           api.get("/reservations"),
+          api.get("/complaints"),
         ]);
 
         const rooms = roomsRes.data;
         const reservations = reservationsRes.data;
+        const complaints = complaintsRes.data;
 
         const availableRooms = rooms.filter((r) => r.status === "Available").length;
         const occupiedRooms = rooms.filter(
@@ -74,12 +76,14 @@ const AdminDashboard = () => {
           return sum + r.advanceAmount; // still owed: balance not yet collected
         }, 0);
 
+        const pendingComplaints = complaints.filter((c) => c.status === "Pending").length;
+
         setStats({
           totalRooms: rooms.length,
           availableRooms,
           occupiedRooms,
           revenue,
-          complaints: 0,
+          complaints: pendingComplaints,
         });
 
         setRecentReservations(
@@ -115,10 +119,10 @@ const AdminDashboard = () => {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <DashboardCard label="Total Rooms" value={stats.totalRooms} icon="🏨" />
-        <DashboardCard label="Available Rooms" value={stats.availableRooms} icon="✅" color="#16A34A" />
+        <DashboardCard label="Available Rooms" value={stats.availableRooms} icon="✅" color="16A34A" />
         <DashboardCard label="Occupied Rooms" value={stats.occupiedRooms} icon="🛏️" color="#D4AF37" />
         <DashboardCard label="Revenue" value={`Tk ${stats.revenue}`} icon="💰" color="#16A34A" />
-        <DashboardCard label="Complaints" value={stats.complaints} icon="⚠️" color="#DC2626" />
+        <DashboardCard label="Complaints" value={stats.complaints} icon="⚠️" color="#D4AF37" />
       </div>
 
       {/* Charts */}
@@ -136,7 +140,7 @@ const AdminDashboard = () => {
         </div>
 
         <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="font-semibold text-[#1E3A8A] mb-4">Occupancy</h3>
+          <h3 className="font-semibold text-[#1E3A8A] mb-10">Occupancy</h3>
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie

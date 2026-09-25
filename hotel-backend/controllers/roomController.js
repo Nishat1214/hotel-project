@@ -3,9 +3,9 @@ import Reservation from "../models/Reservation.js";
 
 // Business rule: max capacity allowed per room type
 const CAPACITY_LIMITS = {
-  standard: 3,
+  standard: 2,
   deluxe: 2,
-  suite: 2,
+  suite: 3,
   family: 4,
 };
 
@@ -121,6 +121,7 @@ export const getRoomCategories = async (req, res) => {
             : rooms.filter((r) => r.status === "Available");
 
         const prices = rooms.map((r) => r.price);
+        const capacities = rooms.map((r) => r.capacity);
         const facilitiesSet = new Set(rooms.flatMap((r) => r.facilities || []));
 
         return {
@@ -128,7 +129,10 @@ export const getRoomCategories = async (req, res) => {
           totalRooms: rooms.length,
           availableCount: availableRooms.length,
           minPrice: prices.length ? Math.min(...prices) : null,
-          capacity: CAPACITY_LIMITS[type],
+          // Reflect the actual rooms in this category rather than the
+          // validation ceiling — otherwise editing a room's capacity has
+          // no effect on what customers see here.
+          capacity: capacities.length ? Math.max(...capacities) : CAPACITY_LIMITS[type],
           image: rooms.find((r) => r.images?.length)?.images[0] || null,
           facilities: Array.from(facilitiesSet),
         };
@@ -167,6 +171,19 @@ export const updateRoom = async (req, res) => {
 
     if (!room) {
       return res.status(404).json({ message: "Room not found" });
+    }
+
+    // Business rule: an Occupied room's status can only change via the actual
+    // checkout process, never by manually editing the room. This prevents staff
+    // from accidentally (or carelessly) freeing up a room a guest is still in.
+    if (
+      room.status === "Occupied" &&
+      req.body.status &&
+      req.body.status !== "Occupied"
+    ) {
+      return res.status(400).json({
+        message: "Cannot manually change status of an Occupied room. Use Check-out to free this room.",
+      });
     }
 
     const { price, capacity, type } = req.body;

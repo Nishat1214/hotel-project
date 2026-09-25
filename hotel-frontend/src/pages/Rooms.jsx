@@ -67,7 +67,7 @@ const CategoryCard = ({ category, checkIn, checkOut }) => {
   }`;
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition">
+    <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition flex flex-col h-full">
       <img
         src={
           category.image ||
@@ -76,7 +76,7 @@ const CategoryCard = ({ category, checkIn, checkOut }) => {
         alt={displayName}
         className="w-full h-56 object-cover"
       />
-      <div className="p-5">
+      <div className="p-5 flex flex-col flex-1">
         <div className="flex justify-between items-start mb-2">
           <h3 className="text-xl font-bold text-[#1E3A8A]">{displayName}</h3>
           <span
@@ -103,27 +103,29 @@ const CategoryCard = ({ category, checkIn, checkOut }) => {
           </div>
         )}
 
-        {isLowAvailability && (
-          <p className="text-orange-600 text-sm font-medium mb-3">
-            ⚠️ Only {category.availableCount} room{category.availableCount > 1 ? "s" : ""} left!
-          </p>
-        )}
+        <div className="mt-auto">
+          {isLowAvailability && (
+            <p className="text-orange-600 text-sm font-medium mb-3">
+              ⚠️ Only {category.availableCount} room{category.availableCount > 1 ? "s" : ""} left!
+            </p>
+          )}
 
-        {isSoldOut ? (
-          <button
-            disabled
-            className="block w-full text-center bg-gray-200 text-gray-400 py-2 rounded font-semibold cursor-not-allowed"
-          >
-            Currently Unavailable
-          </button>
-        ) : (
-          <Link
-            to={detailsLink}
-            className="block w-full text-center bg-[#1E3A8A] text-white py-2 rounded font-semibold hover:opacity-90"
-          >
-            View Available Rooms
-          </Link>
-        )}
+          {isSoldOut ? (
+            <button
+              disabled
+              className="block w-full text-center bg-gray-200 text-gray-400 py-2 rounded font-semibold cursor-not-allowed"
+            >
+              Currently Unavailable
+            </button>
+          ) : (
+            <Link
+              to={detailsLink}
+              className="block w-full text-center bg-[#1E3A8A] text-white py-2 rounded font-semibold hover:opacity-90"
+            >
+              View Available Rooms
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

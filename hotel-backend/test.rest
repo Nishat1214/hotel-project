@@ -92,3 +92,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzg2NWNlN
 
 ### Get room categories
 GET http://localhost:5000/api/rooms/categories
+
+### Get Reservations (use token from login response above)
+GET http://localhost:5000/api/reservations
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNzg2NWNlN2EwM2E2M2Y3YjUyNzU2NSIsInJvbGUiOiJjdXN0b21lciIsImlhdCI6MTc4OTkyMzY5OCwiZXhwIjoxNzkwNTI4NDk4fQ.QXTc2zv1RyeqMaFnVBF5E-i6iS4Z4u3mc0dU3EQwyWA

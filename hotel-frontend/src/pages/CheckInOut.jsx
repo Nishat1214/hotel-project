@@ -80,13 +80,31 @@ const CheckInOut = () => {
     setStep("confirm");
   };
 
+  // ---------------------------------------------------------------------------
+  // Checkout money math — computed once, used everywhere.
+  //
+  // effectiveBalance trusts `balancePaid` over `balanceAmount`. If the backend
+  // says the balance is settled, it is 0 regardless of what the raw field holds.
+  // That way a stale/incorrect balanceAmount can never make us charge a guest
+  // twice or block a completed checkout.
+  // ---------------------------------------------------------------------------
+  const effectiveBalance = billPreview
+    ? billPreview.balancePaid
+      ? 0
+      : Number(billPreview.balanceAmount) || 0
+    : 0;
+
+  const manualCharge = Number(additionalCharge) || 0;
+
+  const lateFee =
+    billPreview && billPreview.daysLate > 0 ? Number(billPreview.lateFee) || 0 : 0;
+
+  const extraCharges = manualCharge + lateFee;
+
+  const finalBalance = effectiveBalance + extraCharges;
+
   const handleFinalizeCheckout = async () => {
     setCheckoutError("");
-
-    const finalBalance =
-      billPreview.balanceAmount +
-      (Number(additionalCharge) || 0) +
-      (billPreview.daysLate > 0 ? billPreview.lateFee : 0);
 
     try {
       const { data } = await api.put(`/reservations/${checkoutModal._id}/checkout`, {
@@ -252,16 +270,18 @@ const CheckInOut = () => {
               <>
                 <div className="bg-[#F8FAFC] rounded p-3 mb-4 text-sm space-y-1">
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
-                  <p>Advance paid: Tk {billPreview.advanceAmount} ({billPreview.advanceMethod})</p>
+                  <p>
+                    Advance paid: Tk {billPreview.advanceAmount} ({billPreview.advanceMethod})
+                  </p>
                   {billPreview.balancePaid ? (
                     <p className="text-green-600 font-medium">✅ Balance already settled</p>
                   ) : (
-                    <p>Balance so far: Tk {billPreview.balanceAmount}</p>
+                    <p>Balance so far: Tk {effectiveBalance}</p>
                   )}
                   {billPreview.daysLate > 0 && (
                     <p className="text-red-600 font-medium pt-1 border-t mt-1">
                       ⚠️ {billPreview.daysLate} day{billPreview.daysLate > 1 ? "s" : ""} late — Tk{" "}
-                      {billPreview.lateFee} late checkout fee will be added automatically
+                      {lateFee} late checkout fee will be added automatically
                     </p>
                   )}
                 </div>
@@ -300,67 +320,68 @@ const CheckInOut = () => {
                   <p className="font-semibold text-[#1E3A8A] mb-2">📄 Final Invoice</p>
                   <p>Room charge: Tk {billPreview.roomCharge}</p>
                   <p>
-                    Additional charges: Tk{" "}
-                    {billPreview.additionalCharges +
-                      (Number(additionalCharge) || 0) +
-                      (billPreview.daysLate > 0 ? billPreview.lateFee : 0)}
+                    Additional charges: Tk {(Number(billPreview.additionalCharges) || 0) + extraCharges}
                   </p>
-                  {Number(additionalCharge) > 0 && (
+                  {manualCharge > 0 && (
                     <p className="text-gray-500 text-xs">
-                      (includes Tk {Number(additionalCharge)} manual charge)
+                      (includes Tk {manualCharge} manual charge)
                     </p>
                   )}
                   {billPreview.daysLate > 0 && (
                     <p className="text-red-600 text-xs">
-                      (includes Tk {billPreview.lateFee} late checkout fee for {billPreview.daysLate} extra day
+                      (includes Tk {lateFee} late checkout fee for {billPreview.daysLate} extra day
                       {billPreview.daysLate > 1 ? "s" : ""})
                     </p>
                   )}
                   <p>Advance already paid: Tk {billPreview.advanceAmount}</p>
+                  {billPreview.balancePaid && (
+                    <p className="text-green-600 text-xs">
+                      (balance of Tk {billPreview.balanceAmount} already settled)
+                    </p>
+                  )}
                   <p className="font-bold text-lg pt-2 border-t mt-2">
-                    Balance Due Now: Tk{" "}
-                    {billPreview.balanceAmount +
-                      (Number(additionalCharge) || 0) +
-                      (billPreview.daysLate > 0 ? billPreview.lateFee : 0)}
+                    Balance Due Now: Tk {finalBalance}
                   </p>
                 </div>
 
-                {(() => {
-                  const finalBalance =
-                    billPreview.balanceAmount +
-                    (Number(additionalCharge) || 0) +
-                    (billPreview.daysLate > 0 ? billPreview.lateFee : 0);
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="w-full mb-4 bg-[#D4AF37] text-[#1E3A8A] py-2 rounded font-semibold hover:opacity-90"
+                >
+                  🖨️ Print Invoice
+                </button>
 
-                  return finalBalance > 0 ? (
-                    <>
-                      <label className="block text-sm font-medium mb-1">Balance Payment Method</label>
-                      <select
-                        value={balanceMethod}
-                        onChange={(e) => setBalanceMethod(e.target.value)}
-                        className="w-full border rounded px-3 py-2 mb-3"
-                      >
-                        <option value="cash">Cash</option>
-                        <option value="card">Card</option>
-                      </select>
+                {finalBalance > 0 ? (
+                  <>
+                    <label className="block text-sm font-medium mb-1">Balance Payment Method</label>
+                    <select
+                      value={balanceMethod}
+                      onChange={(e) => setBalanceMethod(e.target.value)}
+                      className="w-full border rounded px-3 py-2 mb-3"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                    </select>
 
-                      <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={finalPaymentConfirmed}
-                          onChange={(e) => setFinalPaymentConfirmed(e.target.checked)}
-                          className="mt-0.5"
-                        />
-                        <span>
-                          I confirm the balance of Tk {finalBalance} has been received via {balanceMethod}.
-                        </span>
-                      </label>
-                    </>
-                  ) : (
-                    <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
-                      ✅ No outstanding balance — ready to complete check-out.
-                    </p>
-                  );
-                })()}
+                    <label className="flex items-start gap-2 bg-yellow-50 text-yellow-800 text-sm px-3 py-3 rounded mb-4 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={finalPaymentConfirmed}
+                        onChange={(e) => setFinalPaymentConfirmed(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        I confirm the balance of Tk {finalBalance} has been received via{" "}
+                        {balanceMethod}.
+                      </span>
+                    </label>
+                  </>
+                ) : (
+                  <p className="bg-green-50 text-green-700 text-sm px-3 py-2 rounded mb-4">
+                    ✅ No outstanding balance — ready to complete check-out.
+                  </p>
+                )}
 
                 <div className="flex gap-2">
                   <button
@@ -371,12 +392,7 @@ const CheckInOut = () => {
                   </button>
                   <button
                     onClick={handleFinalizeCheckout}
-                    disabled={
-                      billPreview.balanceAmount +
-                        (Number(additionalCharge) || 0) +
-                        (billPreview.daysLate > 0 ? billPreview.lateFee : 0) >
-                        0 && !finalPaymentConfirmed
-                    }
+                    disabled={finalBalance > 0 && !finalPaymentConfirmed}
                     className="flex-1 bg-green-600 text-white py-2 rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Complete Check-out

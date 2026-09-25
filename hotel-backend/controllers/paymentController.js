@@ -77,7 +77,7 @@ export const settleBalance = async (req, res) => {
   try {
     const { balanceMethod } = req.body;
 
-    if (!["cash", "card", "online"].includes(balanceMethod)) {
+    if (!["cash", "card"].includes(balanceMethod)) {
       return res.status(400).json({ message: "Invalid balance payment method" });
     }
 
@@ -94,6 +94,7 @@ export const settleBalance = async (req, res) => {
     payment.balanceMethod = balanceMethod;
     payment.balancePaidAt = new Date();
     payment.status = "Paid";
+    payment.balanceAmount = 0; // reflect reality: nothing is actually owed anymore
     await payment.save();
 
     const reservation = await Reservation.findById(payment.reservation);

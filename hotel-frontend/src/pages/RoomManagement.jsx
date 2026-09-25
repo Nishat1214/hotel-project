@@ -4,9 +4,9 @@ import Modal from "../components/Modal";
 import api from "../services/api";
 
 const CAPACITY_LIMITS = {
-  standard: 3,
+  standard: 2,
   deluxe: 2,
-  suite: 2,
+  suite: 3,
   family: 4,
 };
 const RoomManagement = () => {
@@ -80,6 +80,17 @@ const RoomManagement = () => {
     const capacityLimit = CAPACITY_LIMITS[formData.type];
     if (Number(formData.capacity) > capacityLimit) {
       setError(`Capacity for ${formData.type} rooms cannot exceed ${capacityLimit} guests`);
+      return;
+    }
+
+    // Guard against submitting a status change on a room that's currently Occupied —
+    // matches the backend rule; this just gives an earlier, friendlier error.
+    if (
+      editingRoom &&
+      editingRoom.status === "Occupied" &&
+      formData.status !== "Occupied"
+    ) {
+      setError("Cannot manually change status of an Occupied room. Use Check-out to free this room.");
       return;
     }
 
@@ -243,13 +254,19 @@ const RoomManagement = () => {
             name="status"
             value={formData.status}
             onChange={handleChange}
-            className="w-full border rounded px-3 py-2 mb-6"
+            disabled={editingRoom?.status === "Occupied"}
+            className="w-full border rounded px-3 py-2 mb-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
             <option value="Available">Available</option>
             <option value="Reserved">Reserved</option>
             <option value="Occupied">Occupied</option>
             <option value="Maintenance">Maintenance</option>
           </select>
+          {editingRoom?.status === "Occupied" && (
+            <p className="text-xs text-orange-600 mb-4">
+              This room is currently Occupied — status can only be freed via Check-out.
+            </p>
+          )}
 
           <button
             type="submit"

@@ -8,7 +8,7 @@ import { generateInvoiceNumber } from "./paymentController.js";
 import sendEmail from "../utils/sendEmail.js";
 import { sendSetPasswordEmail } from "../utils/sendSetPasswordEmail.js";
 
-const ADVANCE_PERCENTAGE = 0.2;
+const ADVANCE_PERCENTAGE = 0.2;//20% advance payment for online booking,rest to be paid at hotel
 
 const hasOverlap = async (roomId, checkIn, checkOut, excludeReservationId = null) => {
   const query = {

@@ -11,7 +11,7 @@ import { createReservationRecord } from "./reservationController.js";
 import { sendSetPasswordEmail } from "../utils/sendSetPasswordEmail.js";
 import { sendRefundCompletedEmail } from "../utils/sendRefundEmail.js";
 
-const ADVANCE_PERCENTAGE = 0.2;
+const ADVANCE_PERCENTAGE = 0.2;// 20 % advance booking
 
 const buildSslData = ({ tranId, amount, productLabel, customer }) => ({
   total_amount: amount,

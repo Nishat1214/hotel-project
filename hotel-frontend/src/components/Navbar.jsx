@@ -1,11 +1,20 @@
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const navLinkClass = ({ isActive }) =>
     `hover:text-[#D4AF37] transition ${isActive ? "text-[#D4AF37] font-semibold" : ""}`;
+
+  const handleLogout = () => {
+    logout();
+    setMenuOpen(false);
+    navigate("/login");
+  };
 
   return (
     <nav className="bg-[#1E3A8A] text-white px-6 py-4">
@@ -20,12 +29,25 @@ const Navbar = () => {
           <NavLink to="/rooms" className={navLinkClass}>Rooms</NavLink>
           <NavLink to="/about" className={navLinkClass}>About</NavLink>
           <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
-          <Link
-            to="/login"
-            className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold hover:opacity-90"
-          >
-            Login
-          </Link>
+
+          {user ? (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-[#D4AF37]">Hi, {user.name || "Guest"}</span>
+              <button
+                onClick={handleLogout}
+                className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold hover:opacity-90"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold hover:opacity-90"
+            >
+              Login
+            </Link>
+          )}
         </div>
 
         {/* Mobile menu button */}
@@ -45,13 +67,23 @@ const Navbar = () => {
           <NavLink to="/rooms" className={navLinkClass} onClick={() => setMenuOpen(false)}>Rooms</NavLink>
           <NavLink to="/about" className={navLinkClass} onClick={() => setMenuOpen(false)}>About</NavLink>
           <NavLink to="/contact" className={navLinkClass} onClick={() => setMenuOpen(false)}>Contact</NavLink>
-          <Link
-            to="/login"
-            onClick={() => setMenuOpen(false)}
-            className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold text-center"
-          >
-            Login
-          </Link>
+
+          {user ? (
+            <button
+              onClick={handleLogout}
+              className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold text-center"
+            >
+              Logout
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              onClick={() => setMenuOpen(false)}
+              className="bg-[#D4AF37] text-[#1E3A8A] px-4 py-2 rounded font-semibold text-center"
+            >
+              Login
+            </Link>
+          )}
         </div>
       )}
     </nav>
